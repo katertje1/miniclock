@@ -1,5 +1,12 @@
 # Release Notes
 /*
+Version 0.211 - February 6, 2026
+- Migrated project to PlatformIO structure (src/, include/, platformio.ini).
+- Added OTA support (ArduinoOTA) and mDNS-based uploads using <deviceName>.local.
+- Added upload helper scripts (tools/upload.py, tools/ports.py) to select clock and upload method.
+- Wi‑Fi credentials are now per‑clock in clockConfigs (Settings.cpp).
+- Updated warnings/cleanup from the PlatformIO migration.
+
 Version 0.210 - 27 October 2024
 - Fixed bug for wintertime
 

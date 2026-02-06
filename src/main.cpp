@@ -1,4 +1,5 @@
 #include <ESP8266WiFi.h>
+#include <ArduinoOTA.h>
 #include <NTPClient.h>
 #include <TimeLib.h>
 #include "Settings.h"
@@ -37,16 +38,28 @@ void setup() {
   initClockDisplay();
   connectToWiFi();
 
-timeClient.begin();
-timeClient.update();  // Force NTP sync before checking DST
-currentOffset = getDSTOffset();
-timeClient.setTimeOffset(currentOffset);
+  ArduinoOTA.setHostname(currentConfig.deviceName);
+  ArduinoOTA.onStart([]() { Serial.println("OTA update start"); });
+  ArduinoOTA.onEnd([]() { Serial.println("OTA update end"); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("OTA progress: %u%%\n", (progress * 100) / total);
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA error[%u]\n", error);
+  });
+  ArduinoOTA.begin();
+
+  timeClient.begin();
+  timeClient.update();  // Force NTP sync before checking DST
+  currentOffset = getDSTOffset();
+  timeClient.setTimeOffset(currentOffset);
   initWebServer();
 
   Serial.println("Setup completed");
 }
 
 void loop() {
+  ArduinoOTA.handle();
   timeClient.update();
 
   if (millis() - lastDSTCheck > DST_UPDATE_INTERVAL) {
@@ -157,7 +170,7 @@ void connectToWiFi() {
 
   Serial.println("Connecting to WiFi...");
   WiFi.hostname(currentConfig.deviceName);
-  WiFi.begin(ssid, password);
+  WiFi.begin(currentConfig.ssid, currentConfig.password);
 
   int retries = 0;
   while (WiFi.status() != WL_CONNECTED) {

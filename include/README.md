@@ -23,11 +23,22 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - Install the **NTPClient** library for time synchronization with NTP servers.
 
 2. **Configure Wi-Fi Settings**:
-   - Update the `Settings.h` file with your Wi-Fi SSID and password.
+   - Update `src/Settings.cpp`. Each clock in `clockConfigs` now has its own `ssid` and `password`.
 
 3. **Upload the Code**:
    - Connect the ESP8266 to your computer using a USB cable.
-   - Use the Arduino IDE to upload the code to the ESP8266.
+   - Use PlatformIO (`pio run -t upload`) to upload.
+
+4. **OTA Upload (optional)**:
+   - Ensure the device is on Wi‑Fi.
+   - OTA uses mDNS by default: `<deviceName>.local` (set via `currentConfig.deviceName`).
+   - Upload via OTA with: `pio run -e nodemcuv2_ota -t upload`
+
+5. **Upload Helper (no IPs in git)**:
+   - Run: `tools/upload.py` and select a clock + method.
+   - The clock list is read from `src/Settings.cpp` every run.
+   - Optional: create `tools/upload.local.json` if you want per‑clock `ota_host` overrides.
+   - `tools/ports.py` prints available `/dev/cu.*` ports.
 
 ### Usage
 
@@ -35,4 +46,3 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
 - **Nighttime Mode**: During nighttime, the digits on the clock turn red for better visibility.
 - **Brightness Adjustment**: The brightness of the LED strip is automatically adjusted to ensure the clock is readable under various lighting conditions.
 ## Planned Features by Version
-

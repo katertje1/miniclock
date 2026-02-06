@@ -16,6 +16,8 @@ extern time_t lastSunsetTime;
 // Declare selectedClock as an index (int)
 struct ClockSettings {
     const char* deviceName;
+    const char* ssid;
+    const char* password;
     uint32_t DEFAULT_HOUR_COLOR;
     uint32_t DEFAULT_MINUTE_COLOR;
     uint32_t DEFAULT_COLON_COLOR;
@@ -31,8 +33,6 @@ extern ClockSettings clockConfigs[];
 extern ClockSettings currentConfig;
 
 //wifi
-extern const char* ssid;                            //wifi networkname
-extern const char* password;                        //wifi password
 extern const char* ntpServerName;                   //time server the program uses
 
 //time

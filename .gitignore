@@ -3,3 +3,5 @@
 .vscode/
 /src/Settings.cpp
 /data/
+/tools/upload.local.json
+/tools/.upload.state.json
