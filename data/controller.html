@@ -142,6 +142,10 @@
     <label for="targetClock">Select Clock:</label>
     <select id="targetClock">
     </select>
+    <button type="button" onclick="toggleProbeInfo()">Show Probe Targets</button>
+  </div>
+  <div id="probeInfo" style="display: none; max-width: 900px; margin: 10px auto; background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px;">
+    <pre id="probeInfoText" style="margin: 0; white-space: pre-wrap; text-align: left; font-size: 0.85rem;"></pre>
   </div>
 
   <div id="clockTime"></div>
@@ -163,19 +167,34 @@
     <thead id="clockTableHead"></thead>
     <tbody id="clockTableBody"></tbody>
   </table>
+  <p id="noClocksMessage" style="display: none; text-align: center; margin-top: 20px;">No reachable clocks found.</p>
 
   <!-- Move JavaScript here to ensure DOM is loaded -->
   <script>
     let clockNames = [];
     let clockHosts = [];
+    let probeStates = [];
 
     function displayName(name) {
       return name.replace(/_/g, ' ');
     }
 
+    function toMdnsHost(name) {
+      // Keep display names separate; match current device hostnames (with underscores).
+      const safe = name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+        .toLowerCase();
+      return `${safe}.local`;
+    }
+
     function buildSelect(reachableHosts, reachableNames) {
       const select = document.getElementById('targetClock');
       select.innerHTML = '';
+      const selfHost = (window.location.hostname || '').toLowerCase();
       const allOpt = document.createElement('option');
       allOpt.value = 'all';
       allOpt.textContent = 'All Clocks';
@@ -186,6 +205,12 @@
         opt.textContent = displayName(reachableNames[index]);
         select.appendChild(opt);
       });
+
+      if (selfHost && reachableHosts.includes(selfHost)) {
+        select.value = selfHost;
+      } else {
+        select.value = 'all';
+      }
     }
 
     function buildTable(reachableHosts, reachableNames) {
@@ -249,30 +274,8 @@
     }
 
     function fetchClockData(host) {
-      const requests = [
-        fetch(`http://${host}/getDeviceName`).then(response => response.text()),
-        fetch(`http://${host}/getSoftwareVersion`).then(response => response.text()),
-        fetch(`http://${host}/getCurrentDateTime`).then(response => response.text()),
-        fetch(`http://${host}/getSunrise`).then(response => response.text()),
-        fetch(`http://${host}/getSunset`).then(response => response.text()),
-        fetch(`http://${host}/getCurrentMode`).then(response => response.text()),
-        fetch(`http://${host}/getBrightness`).then(response => response.json()),
-        fetch(`http://${host}/getHourColor`).then(response => response.text().then(color => color.trim())),
-        fetch(`http://${host}/getMinuteColor`).then(response => response.text().then(color => color.trim()))
-      ];
-
-      return Promise.all(requests)
-        .then(responses => ({
-          deviceName: responses[0],
-          softwareVersion: responses[1],
-          currentTime: responses[2],
-          sunriseTime: responses[3],
-          sunsetTime: responses[4],
-          currentMode: responses[5],
-          currentBrightness: responses[6].brightness,
-          hourColor: responses[7],
-          minuteColor: responses[8]
-        }))
+      return fetch(`http://${host}/getStatus`)
+        .then(response => response.json())
         .catch(error => {
           console.error(`Error fetching data from ${host}:`, error);
           return null;
@@ -332,19 +335,43 @@
       fetch('/getClockList')
         .then(response => response.json())
         .then(names => {
-          clockNames = names;
-          clockHosts = names.map(n => `${n}.local`);
-          Promise.all(clockHosts.map(probeHost)).then(results => {
+          const configuredNames = names.slice();
+          const configuredHosts = names.map(n => toMdnsHost(n));
+          const selfHost = (window.location.hostname || '').toLowerCase();
+
+          Promise.all(configuredHosts.map(probeHost)).then(results => {
             const reachableNames = [];
             const reachableHosts = [];
+            probeStates = [];
             results.forEach((ok, idx) => {
+              probeStates.push({ name: configuredNames[idx], host: configuredHosts[idx], reachable: ok });
               if (ok) {
-                reachableNames.push(clockNames[idx]);
-                reachableHosts.push(clockHosts[idx]);
+                reachableNames.push(configuredNames[idx]);
+                reachableHosts.push(configuredHosts[idx]);
               }
             });
+
+            // Always include the current host as reachable: page is already loaded from it.
+            if (selfHost && !reachableHosts.includes(selfHost)) {
+              const selfIdx = configuredHosts.indexOf(selfHost);
+              const selfName = selfIdx >= 0 ? configuredNames[selfIdx] : 'Current_Clock';
+              probeStates.unshift({ name: selfName, host: selfHost, reachable: true });
+              reachableNames.unshift(selfName);
+              reachableHosts.unshift(selfHost);
+            } else if (selfHost) {
+              const idx = probeStates.findIndex(p => p.host === selfHost);
+              if (idx >= 0) {
+                probeStates[idx].reachable = true;
+              }
+            }
+
             clockNames = reachableNames;
             clockHosts = reachableHosts;
+            const noClocks = clockHosts.length === 0;
+            document.getElementById('noClocksMessage').style.display = noClocks ? 'block' : 'none';
+            document.querySelectorAll('#section-modes button').forEach(btn => {
+              btn.disabled = noClocks;
+            });
             buildSelect(clockHosts, clockNames);
             buildTable(clockHosts, clockNames);
             updateTable(clockHosts);
@@ -352,6 +379,24 @@
           });
         })
         .catch(error => console.error('Error loading clock list:', error));
+    }
+
+    function toggleProbeInfo() {
+      const panel = document.getElementById('probeInfo');
+      const text = document.getElementById('probeInfoText');
+      const currentlyHidden = panel.style.display === 'none';
+      if (currentlyHidden) {
+        if (!probeStates.length) {
+          text.textContent = 'No probe data yet.';
+        } else {
+          text.textContent = probeStates
+            .map(p => `${p.reachable ? '[OK] ' : '[--] '} ${p.name} -> ${p.host}`)
+            .join('\n');
+        }
+        panel.style.display = 'block';
+      } else {
+        panel.style.display = 'none';
+      }
     }
 
     window.onload = function () {

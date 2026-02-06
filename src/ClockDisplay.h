@@ -6,10 +6,11 @@
 
 void initClockDisplay();
 void updateClockDisplay();
+void updateModeDisplay();
 void displayDigit(int startIndex, int digit, uint32_t color); // This line now works
-void displayLetter(int startIndex, int letterIndex, uint32_t color);
+void displayLetter(int startIndex, char letter, uint32_t color);
 
-uint32_t Wheel(); // This line also works now
+uint32_t Wheel(byte WheelPos);
 void displayTime();
 void displayRainbowMode();  // Ensure this is declared
 void displayLoveMode();     // Ensure this is declared

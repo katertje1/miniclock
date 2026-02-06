@@ -14,6 +14,8 @@ void handleGetClockList();
 void handleGetDeviceName();
 void handleGetSoftwareVersion();
 void handleGetCurrentMode();
+void handleGetDiagnostics();
+void handleGetStatus();
 void handleGetSunrise();
 void handleGetSunset();
 

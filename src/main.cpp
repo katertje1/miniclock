@@ -19,13 +19,30 @@ unsigned long lastDSTCheck = 0;
 const unsigned long DST_UPDATE_INTERVAL = 3600000;  // 1 hour
 
 int currentOffset = 0;
+unsigned long lastWiFiReconnectAttempt = 0;
+const unsigned long WIFI_RECONNECT_INTERVAL = 15000;
 
 //#define TIMEZONE_OFFSET 2  // Central European Summer Time (CEST) is UTC+2
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Setup started");
+  Serial.print("Reset reason: ");
+  Serial.println(ESP.getResetReason());
+  Serial.print("Reset info: ");
+  Serial.println(ESP.getResetInfo());
 
+  if (clockConfigCount <= 0) {
+    Serial.println("No clock configurations found. Halting.");
+    while (true) {
+      delay(1000);
+    }
+  }
+  if (selectedClock < 0 || selectedClock >= clockConfigCount) {
+    Serial.print("selectedClock out of range, using 0 instead: ");
+    Serial.println(selectedClock);
+    selectedClock = 0;
+  }
   currentConfig = clockConfigs[selectedClock];
   Serial.print("Using device: ");
   Serial.println(currentConfig.deviceName);
@@ -59,6 +76,11 @@ void setup() {
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWiFiReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
+    connectToWiFi();
+    lastWiFiReconnectAttempt = millis();
+  }
+
   ArduinoOTA.handle();
   timeClient.update();
 
@@ -78,6 +100,8 @@ void loop() {
 
   if (currentMode == CLOCK_MODE) {
     updateClockDisplay();
+  } else {
+    updateModeDisplay();
   }
   handleWebRequests();
 
@@ -100,6 +124,10 @@ void loop() {
   unsigned long currentMillis = millis();
   if (currentMillis - debugPreviousMillis >= debugInterval) {
     debugPreviousMillis = currentMillis;
+    Serial.print("Uptime (s):          ");
+    Serial.println(currentMillis / 1000);
+    Serial.print("Free heap:           ");
+    Serial.println(ESP.getFreeHeap());
 
     Serial.println("Device :              " + String(currentConfig.deviceName));
     Serial.println("IP :                  " + WiFi.localIP().toString());

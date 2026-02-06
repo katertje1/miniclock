@@ -297,14 +297,6 @@ htmlPage += "});";
 
 // Reverted back without the `isSelectingColor` logic
 
-  // Interval fetch logic without disabling fetch during color selection
-  htmlPage += "setInterval(function() {";
-  htmlPage += "    fetchCurrentDateTime();";
-  htmlPage += "    fetchColors();"; // This fetches the color updates every 2 seconds
-  htmlPage += "    fetchCurrentBrightness();";
-  htmlPage += "    fetchBrightnessOffsets();";
-  htmlPage += "}, 5000);";  // Every 5 seconds
-
 htmlPage += "let isSelectingColor = false;";  // Flag to pause fetching during color selection
 
 // Function to fetch colors from the server
@@ -416,7 +408,7 @@ htmlPage += "}, 5000);";  // Every 5 seconds, fetch updates only when not select
 
   htmlPage += "</body></html>";
 
-  server.send(200, "text/html", htmlPage);  server.send(200, "text/html", htmlPage);
+  server.send(200, "text/html", htmlPage);
 }
 
 void initWebServer() {
@@ -432,7 +424,9 @@ void initWebServer() {
   server.on("/getClockList", []() { addGlobalCORSHeaders(); handleGetClockList(); });
   server.on("/getDeviceName", []() { addGlobalCORSHeaders(); handleGetDeviceName(); });
   server.on("/getSoftwareVersion", []() { addGlobalCORSHeaders(); handleGetSoftwareVersion(); });
+  server.on("/getStatus", []() { addGlobalCORSHeaders(); handleGetStatus(); });
   server.on("/getCurrentMode", []() { addGlobalCORSHeaders(); handleGetCurrentMode(); });
+  server.on("/getDiagnostics", []() { addGlobalCORSHeaders(); handleGetDiagnostics(); });
   server.on("/getSunrise", []() { addGlobalCORSHeaders(); handleGetSunrise(); });
   server.on("/getSunset", []() { addGlobalCORSHeaders(); handleGetSunset(); });
 
@@ -477,8 +471,57 @@ void handleGetDeviceName() {
 void handleGetSoftwareVersion() {
   server.send(200, "text/plain", softwareVersion);
 }
+void handleGetStatus() {
+  JsonDocument doc;
+  doc["deviceName"] = currentConfig.deviceName;
+  doc["softwareVersion"] = softwareVersion;
+  doc["currentTime"] = "";
+  doc["sunriseTime"] = "";
+  doc["sunsetTime"] = "";
+  doc["currentMode"] = getClockModeString(currentMode);
+  doc["currentBrightness"] = currentBrightness;
+
+  time_t currentEpochTime = timeClient.getEpochTime();
+  tm* currentInfo = localtime(&currentEpochTime);
+  char timeStr[64];
+  snprintf(timeStr, sizeof(timeStr), "%02d-%02d-%04d %02d:%02d:%02d",
+          currentInfo->tm_mday, currentInfo->tm_mon + 1, currentInfo->tm_year + 1900,
+          currentInfo->tm_hour, currentInfo->tm_min, currentInfo->tm_sec);
+  doc["currentTime"] = timeStr;
+
+  SunriseSunsetTimes times = getSunriseSunsetTimes();
+  char sunriseStr[20];
+  char sunsetStr[20];
+  tm* sunriseInfo = localtime(&times.sunrise);
+  strftime(sunriseStr, sizeof(sunriseStr), "%I:%M %p", sunriseInfo);
+  tm* sunsetInfo = localtime(&times.sunset);
+  strftime(sunsetStr, sizeof(sunsetStr), "%I:%M %p", sunsetInfo);
+  doc["sunriseTime"] = sunriseStr;
+  doc["sunsetTime"] = sunsetStr;
+
+  char colorStr[8];
+  snprintf(colorStr, sizeof(colorStr), "#%06X", hourColor & 0xFFFFFF);
+  doc["hourColor"] = colorStr;
+  snprintf(colorStr, sizeof(colorStr), "#%06X", minuteColor & 0xFFFFFF);
+  doc["minuteColor"] = colorStr;
+
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
 void handleGetCurrentMode() {
   server.send(200, "text/plain", getClockModeString(currentMode));
+}
+void handleGetDiagnostics() {
+  JsonDocument doc;
+  doc["uptimeSeconds"] = millis() / 1000;
+  doc["freeHeap"] = ESP.getFreeHeap();
+  doc["resetReason"] = ESP.getResetReason();
+  doc["resetInfo"] = ESP.getResetInfo();
+
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
 }
 void handleGetSunrise(){
     SunriseSunsetTimes times = getSunriseSunsetTimes();
@@ -513,19 +556,16 @@ void setStopwatchMode() {
 
 void handleRainbowMode() {
   currentMode = RAINBOW_MODE;
-  displayRainbowMode();
   server.send(200, "text/html", "Switched to Rainbow Mode");
 }
 
 void handleLoveMode() {
   currentMode = LOVE_MODE;
-  displayLoveMode();
   server.send(200, "text/html", "Switched to Love Mode");
 }
 
 void handleFoodMode() {
   currentMode = FOOD_MODE;
-  displayFoodMode();
   server.send(200, "text/html", "Switched to Food Mode");
 }
 

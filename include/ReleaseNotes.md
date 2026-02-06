@@ -6,8 +6,17 @@ Version 0.211 - February 6, 2026
 - Added upload helper scripts (tools/upload.py, tools/ports.py) to select clock and upload method.
 - Wi‑Fi credentials are now per‑clock in clockConfigs (Settings.cpp).
 - Controller is served from LittleFS (`/controller`) and uses `/getClockList` with mDNS hosts.
+- Controller now fetches per-device data through `/getStatus` (JSON).
 - Controller now shows only reachable clocks.
+- Controller now auto-selects the current device and includes a probe-target debug view.
+- Controller hostname mapping now uses lowercase underscore-based `.local` names.
 - Upload helper can do firmware, filesystem, or both with OTA wait/retry.
+- Added `/getDiagnostics` endpoint (uptime, heap, reset reason/info).
+- Rainbow/Food rendering is now non-blocking for better OTA/web responsiveness.
+- Added periodic Wi‑Fi reconnect logic in main loop.
+- Added bounds-check/fallback for `selectedClock`.
+- Updated clock display to apply runtime hour/minute color changes.
+- Improved sunrise/sunset handling with DST-aware offset.
 - Updated warnings/cleanup from the PlatformIO migration.
 
 Version 0.210 - 27 October 2024

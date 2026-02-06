@@ -45,11 +45,20 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
 6. **Controller Page**:
    - The controller UI is served from `data/controller.html` at `/controller`.
    - After editing `data/controller.html`, upload the filesystem with: `pio run -t uploadfs` or `pio run -e nodemcuv2_ota -t uploadfs --upload-port <ip>`.
-   - The controller uses `/getClockList` and only shows reachable clocks.
+   - The controller uses `/getClockList` and `/getStatus`, and only shows reachable clocks.
+   - Hostnames are generated as `<clockName>.local` with lowercase and underscores.
+   - The current device is auto-selected in the dropdown when opening `/controller` on that device.
+   - Use **Show Probe Targets** to inspect which hosts are being probed and whether they are reachable.
+
+7. **Diagnostics Endpoint**:
+   - Use `/getDiagnostics` to inspect runtime and reset state without USB serial.
+   - Example: `curl http://<deviceName>.local/getDiagnostics`
 
 ### Usage
 
 - **Time Display**: The clock displays the current time on the WS2812B LED strip, with smooth brightness transitions based on ambient light levels.
 - **Nighttime Mode**: During nighttime, the digits on the clock turn red for better visibility.
 - **Brightness Adjustment**: The brightness of the LED strip is automatically adjusted to ensure the clock is readable under various lighting conditions.
+- **Mode Rendering**: Rainbow/Food modes are rendered non-blocking so OTA/webserver stay responsive.
+- **Wi‑Fi Robustness**: The device retries Wi‑Fi connection in the main loop when disconnected.
 ## Planned Features by Version

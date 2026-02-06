@@ -49,6 +49,33 @@ time_t manualTimeT(struct tm* timeinfo) {
     return seconds;
 }
 
+// Returns local offset in seconds for CET/CEST at a given UTC epoch.
+static int getDSTOffsetForEpoch(time_t epochUtc) {
+    struct tm* timeinfo = gmtime(&epochUtc);
+    if (!timeinfo) return 3600;
+
+    int month = timeinfo->tm_mon + 1;
+    int day = timeinfo->tm_mday;
+    int hour = timeinfo->tm_hour;
+
+    if (month > 3 && month < 10) return 7200;
+    if (month < 3 || month > 10) return 3600;
+
+    if (month == 3) {
+        int lastSunday = 31 - ((timeinfo->tm_wday + 31 - day) % 7);
+        if (day > lastSunday || (day == lastSunday && hour >= 2)) return 7200;
+        return 3600;
+    }
+
+    if (month == 10) {
+        int lastSunday = 31 - ((timeinfo->tm_wday + 31 - day) % 7);
+        if (day < lastSunday || (day == lastSunday && hour < 3)) return 7200;
+        return 3600;
+    }
+
+    return 3600;
+}
+
 void calculateSunriseSunset(bool isSunrise, int year, int month, int day) {
     struct tm timeinfo = {0};
 
@@ -107,8 +134,7 @@ void calculateSunriseSunset(bool isSunrise, int year, int month, int day) {
     Serial.print(isSunrise ? "Sunrise UTC Time before adjustment: " : "Sunset UTC Time before adjustment: ");
     Serial.println(ctime(&finalTime));
 
-    int timezoneOffset = TIMEZONE_OFFSET;
-    finalTime += timezoneOffset * 3600;
+    finalTime += getDSTOffsetForEpoch(finalTime);
 
     Serial.print(isSunrise ? "Sunrise Local Time after adjustment: " : "Sunset Local Time after adjustment: ");
     Serial.println(ctime(&finalTime));

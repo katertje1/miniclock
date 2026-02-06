@@ -53,7 +53,7 @@ const int colonBottomLED = 29; // Index for the bottom colon LED
 // Declare the functions before their usage
 void displayDigit(int startIndex, int digit, uint32_t color);
 void displayColon();
-void displayLetter(int startIndex, int letterIndex, uint32_t color);
+void displayLetter(int startIndex, char letter, uint32_t color);
 uint32_t Wheel(byte WheelPos);
 
 void initClockDisplay() {
@@ -92,15 +92,15 @@ void updateClockDisplay() {
             for (int i = 0; i < 7; i++) {
                 strip.setPixelColor(digitPins[i], 0);  // Turn off all LEDs for the first digit
             }
-            displayDigit(7, hours % 10, isDaytime ? currentConfig.DEFAULT_HOUR_COLOR : currentConfig.NIGHT_HOUR_COLOR);  // Display the hour without the leading zero
+            displayDigit(7, hours % 10, isDaytime ? hourColor : currentConfig.NIGHT_HOUR_COLOR);  // Display the hour without the leading zero
         } else {
-            displayDigit(0, hours / 10, isDaytime ? currentConfig.DEFAULT_HOUR_COLOR : currentConfig.NIGHT_HOUR_COLOR);  // Display the first digit of the hour
-            displayDigit(7, hours % 10, isDaytime ? currentConfig.DEFAULT_HOUR_COLOR : currentConfig.NIGHT_HOUR_COLOR);  // Display the second digit of the hour
+            displayDigit(0, hours / 10, isDaytime ? hourColor : currentConfig.NIGHT_HOUR_COLOR);  // Display the first digit of the hour
+            displayDigit(7, hours % 10, isDaytime ? hourColor : currentConfig.NIGHT_HOUR_COLOR);  // Display the second digit of the hour
         }
 
         displayColon();
-        displayDigit(16, minutes / 10, isDaytime ? currentConfig.DEFAULT_MINUTE_COLOR : currentConfig.NIGHT_MINUTE_COLOR);
-        displayDigit(23, minutes % 10, isDaytime ? currentConfig.DEFAULT_MINUTE_COLOR : currentConfig.NIGHT_MINUTE_COLOR);
+        displayDigit(16, minutes / 10, isDaytime ? minuteColor : currentConfig.NIGHT_MINUTE_COLOR);
+        displayDigit(23, minutes % 10, isDaytime ? minuteColor : currentConfig.NIGHT_MINUTE_COLOR);
 
         strip.show();
     }
@@ -173,22 +173,31 @@ void updateBrightness() {
         strip.show();
     }
 }
+
+static ClockMode lastRenderedMode = CLOCK_MODE;
+static unsigned long rainbowLastUpdate = 0;
+static uint16_t rainbowHue = 0;
+static unsigned long foodLastUpdate = 0;
+static uint8_t foodStep = 0;
+static uint8_t foodCycles = 0;
+
+static void drawFoodWord(uint32_t color) {
+    displayLetter(0, 'F', color);
+    displayLetter(7, 'o', color);
+    displayLetter(16, 'o', color);
+    displayLetter(23, 'd', color);
+}
+
 void displayRainbowMode() {
-  strip.clear();
-    Serial.println("displayRainbowMode called");
-    for(long firstPixelHue = 0; firstPixelHue < 5*65536; firstPixelHue += 256) {
-        for(int i=0; i<strip.numPixels(); i++) {
-            int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
-            strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
-        }
-        strip.show();
-        delay(20);
+    for (int i = 0; i < strip.numPixels(); i++) {
+        int pixelHue = rainbowHue + (i * 65536L / strip.numPixels());
+        strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
     }
+    strip.show();
 }
 
 void displayLoveMode() {
     strip.clear();
-    Serial.println("displayLoveMode called");
     displayLetter(0, 'L', strip.Color(255, 0, 0)); // L
     displayLetter(7, 'O', strip.Color(255, 0, 0)); // O
     displayLetter(16, 'V', strip.Color(255, 0, 0)); // V
@@ -197,31 +206,64 @@ void displayLoveMode() {
 }
 
 void displayFoodMode() {
-  strip.clear();
-    Serial.println("displayFoodMode called");
-    for (int i = 0; i < 10; i++) {
-        displayLetter(0, 'F', strip.Color(255, 0, 0)); // F
-        displayLetter(7, 'o', strip.Color(255, 0, 0)); // o
-        displayLetter(16, 'o', strip.Color(255, 0, 0)); // o
-        displayLetter(23, 'd', strip.Color(255, 0, 0)); // d
-        strip.show();
-        delay(500);
-        strip.clear();
-        strip.show();
-        delay(500);
-        displayLetter(0, 'F', strip.Color(5, 213, 255)); // F
-        displayLetter(7, 'o', strip.Color(5, 213, 255)); // o
-        displayLetter(16, 'o', strip.Color(5, 213, 255)); // o
-        displayLetter(23, 'd', strip.Color(5, 213, 255)); // d
-        strip.show();
-        delay(500);
-        strip.clear();
-        strip.show();
-        delay(500);        
+    unsigned long now = millis();
+    if (now - foodLastUpdate < 500) {
+        return;
     }
-    currentMode = CLOCK_MODE;
-    clearstrip();
+    foodLastUpdate = now;
+
+    if (foodStep == 0) {
+        drawFoodWord(strip.Color(255, 0, 0));
+        strip.show();
+    } else if (foodStep == 1) {
+        strip.clear();
+        strip.show();
+    } else if (foodStep == 2) {
+        drawFoodWord(strip.Color(5, 213, 255));
+        strip.show();
+    } else {
+        strip.clear();
+        strip.show();
+        foodCycles++;
+        if (foodCycles >= 10) {
+            currentMode = CLOCK_MODE;
+            clearstrip();
+            strip.show();
+            return;
+        }
+    }
+
+    foodStep = (foodStep + 1) % 4;
 }
 void clearstrip(){
   strip.clear();
+}
+
+void updateModeDisplay() {
+    unsigned long now = millis();
+    if (currentMode != lastRenderedMode) {
+        lastRenderedMode = currentMode;
+        rainbowHue = 0;
+        rainbowLastUpdate = 0;
+        foodStep = 0;
+        foodCycles = 0;
+        foodLastUpdate = 0;
+        strip.clear();
+        strip.show();
+        if (currentMode == LOVE_MODE) {
+            displayLoveMode();
+        }
+    }
+
+    if (currentMode == RAINBOW_MODE) {
+        if (now - rainbowLastUpdate >= 20) {
+            rainbowLastUpdate = now;
+            rainbowHue += 256;
+            displayRainbowMode();
+        }
+    } else if (currentMode == FOOD_MODE) {
+        displayFoodMode();
+    } else if (currentMode == LOVE_MODE) {
+        // Rendered once on mode transition.
+    }
 }
