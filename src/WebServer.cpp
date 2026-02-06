@@ -61,9 +61,7 @@ void handleRoot() {
   htmlPage += "}";
   htmlPage += "</style></head><body>";
 
-  // Add devicename and softwareVersion from settings.cpp
-  extern const char* devicename;  // Assuming these are defined in settings.cpp
-  //extern const char* softwareVersion;
+  // Add device name and software version from settings.cpp
 
   htmlPage += "<h2>" + String(currentConfig.deviceName) + "</h2>";                      // Display device name
   htmlPage += "<small>Version: " + String(softwareVersion) + "</small>";  // Display software version in subscript
@@ -73,8 +71,8 @@ void handleRoot() {
   tm* timeInfo = localtime(&currentEpochTime);          // Convert to local time struct
 
   // Format the time as dd-mm-yyyy hh:mm:ss
-  char timeStr[20];
-  sprintf(timeStr, "%02d-%02d-%04d %02d:%02d:%02d",
+  char timeStr[64];
+  snprintf(timeStr, sizeof(timeStr), "%02d-%02d-%04d %02d:%02d:%02d",
           timeInfo->tm_mday,         // Day (dd)
           timeInfo->tm_mon + 1,      // Month (mm, months are 0-based in tm)
           timeInfo->tm_year + 1900,  // Year (yyyy)
@@ -532,7 +530,7 @@ void resetColors() {
 }
 
 void getBrightness() {
-  DynamicJsonDocument jsonDoc(128);
+  JsonDocument jsonDoc;
   jsonDoc["brightness"] = currentBrightness;
 
   String response;
@@ -542,13 +540,13 @@ void getBrightness() {
 
 void setBrightnessOffsets() {
   if (server.hasArg("plain")) {
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     deserializeJson(doc, server.arg("plain"));
 
-    if (doc.containsKey("dayOffset")) {
+    if (doc["dayOffset"].is<int>()) {
       dayTimeBrightnessOffset = doc["dayOffset"].as<int>();
     }
-    if (doc.containsKey("nightOffset")) {
+    if (doc["nightOffset"].is<int>()) {
       nightTimeBrightnessOffset = doc["nightOffset"].as<int>();
     }
     server.send(200, "text/html", "Brightness offsets set successfully.");
@@ -608,8 +606,14 @@ void handleSetColonColor() {
 void getCurrentDateTime() {
   time_t currentEpochTime = timeClient.getEpochTime();
   tm* timeInfo = localtime(&currentEpochTime);
-  char timeStr[20];
-  sprintf(timeStr, "%02d-%02d-%04d %02d:%02d:%02d", timeInfo->tm_mday, timeInfo->tm_mon + 1, timeInfo->tm_year + 1900, timeInfo->tm_hour, timeInfo->tm_min, timeInfo->tm_sec);
+  char timeStr[64];
+  snprintf(timeStr, sizeof(timeStr), "%02d-%02d-%04d %02d:%02d:%02d",
+          timeInfo->tm_mday,
+          timeInfo->tm_mon + 1,
+          timeInfo->tm_year + 1900,
+          timeInfo->tm_hour,
+          timeInfo->tm_min,
+          timeInfo->tm_sec);
   server.send(200, "text/plain", String(timeStr));
 }
 

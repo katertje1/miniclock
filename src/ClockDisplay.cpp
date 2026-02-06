@@ -18,18 +18,6 @@ Adafruit_NeoPixel strip(NUM_PIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // Mapping for the digits (0-9) to the LED segments
 const uint8_t digitPatterns[10][7] = {
-  /*
-  { 1, 1, 1, 1, 1, 1, 0 },  // 0
-  { 1, 1, 0, 0, 0, 0, 0 },  // 1
-  { 1, 0, 1, 1, 0, 1, 1 },  // 2
-  { 1, 1, 1, 0, 0, 1, 1 },  // 3
-  { 1, 1, 0, 0, 1, 0, 1 },  // 4
-  { 0, 1, 1, 0, 1, 1, 1 },  // 5
-  { 0, 1, 1, 1, 1, 1, 1 },  // 6
-  { 1, 1, 0, 0, 0, 1, 0 },  // 7
-  { 1, 1, 1, 1, 1, 1, 1 },  // 8
-  { 1, 1, 1, 0, 1, 1, 1 }   // 9
-};*/
       //1, 2, 3, 4, 5, 6, 7,
       { 1, 1, 1, 1, 0, 1, 1 },  // 0
       { 0, 0, 0, 1, 0, 1, 0 },  // 1
@@ -73,18 +61,19 @@ void initClockDisplay() {
     strip.show(); // Initialize all pixels to 'off'
 }
 
+#include "SunriseSunset.h"  // ✅ To get getDSTOffset()
+
 int getHours() {
-    time_t now = timeClient.getEpochTime();
-    struct tm* nowInfo = localtime(&now);
-    return nowInfo->tm_hour;
+    time_t now = timeClient.getEpochTime();  // ✅ No additional DST offset
+    struct tm* timeinfo = gmtime(&now);
+    return timeinfo->tm_hour;
 }
 
 int getMinutes() {
-    time_t now = timeClient.getEpochTime();
-    struct tm* nowInfo = localtime(&now);
-    return nowInfo->tm_min;
+    time_t now = timeClient.getEpochTime();  // ✅ Same here
+    struct tm* timeinfo = gmtime(&now);
+    return timeinfo->tm_min;
 }
-
 
 void updateClockDisplay() {
     unsigned long currentMillis = millis();
@@ -103,15 +92,15 @@ void updateClockDisplay() {
             for (int i = 0; i < 7; i++) {
                 strip.setPixelColor(digitPins[i], 0);  // Turn off all LEDs for the first digit
             }
-            displayDigit(7, hours % 10, isDaytime ? hourColor : strip.Color(255, 0, 0));  // Display the hour without the leading zero
+            displayDigit(7, hours % 10, isDaytime ? currentConfig.DEFAULT_HOUR_COLOR : currentConfig.NIGHT_HOUR_COLOR);  // Display the hour without the leading zero
         } else {
-            displayDigit(0, hours / 10, isDaytime ? hourColor : strip.Color(255, 0, 0));  // Display the first digit of the hour
-            displayDigit(7, hours % 10, isDaytime ? hourColor : strip.Color(255, 0, 0));  // Display the second digit of the hour
+            displayDigit(0, hours / 10, isDaytime ? currentConfig.DEFAULT_HOUR_COLOR : currentConfig.NIGHT_HOUR_COLOR);  // Display the first digit of the hour
+            displayDigit(7, hours % 10, isDaytime ? currentConfig.DEFAULT_HOUR_COLOR : currentConfig.NIGHT_HOUR_COLOR);  // Display the second digit of the hour
         }
 
         displayColon();
-        displayDigit(16, minutes / 10, isDaytime ? minuteColor : strip.Color(255, 0, 0));
-        displayDigit(23, minutes % 10, isDaytime ? minuteColor : strip.Color(255, 0, 0));
+        displayDigit(16, minutes / 10, isDaytime ? currentConfig.DEFAULT_MINUTE_COLOR : currentConfig.NIGHT_MINUTE_COLOR);
+        displayDigit(23, minutes % 10, isDaytime ? currentConfig.DEFAULT_MINUTE_COLOR : currentConfig.NIGHT_MINUTE_COLOR);
 
         strip.show();
     }

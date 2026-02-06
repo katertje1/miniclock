@@ -49,14 +49,8 @@ time_t manualTimeT(struct tm* timeinfo) {
     return seconds;
 }
 
-// Function to calculate the time of sunrise or sunset in UTC
-time_t calculateSunriseSunset(bool calculateSunrise) {
-    time_t now = timeClient.getEpochTime(); // Use NTP synchronized time
-    struct tm* timeinfo = gmtime(&now); // Work in UTC
-
-    int year = timeinfo->tm_year + 1900;
-    int month = timeinfo->tm_mon + 1;
-    int day = timeinfo->tm_mday;
+void calculateSunriseSunset(bool isSunrise, int year, int month, int day) {
+    struct tm timeinfo = {0};
 
     // Latitude and longitude from Settings.h
     float lat = LATITUDE;
@@ -70,118 +64,122 @@ time_t calculateSunriseSunset(bool calculateSunrise) {
 
     // Convert the longitude to hour value and calculate an approximate time
     float lngHour = lng / 15.0;
-    float t = calculateSunrise ? N + ((6 - lngHour) / 24) : N + ((18 - lngHour) / 24);
+    float t = isSunrise ? N + ((6 - lngHour) / 24) : N + ((18 - lngHour) / 24);
 
     // Calculate the Sun's mean anomaly
     float M = (0.9856 * t) - 3.289;
 
-    // Calculate the Sun's true longitude
+    // Sun's true longitude
     float L = fmod(M + (1.916 * sin(DEG_TO_RAD * M)) + (0.020 * sin(2 * DEG_TO_RAD * M)) + 282.634, 360.0);
 
-    // Calculate the Sun's right ascension
+    // Sun's right ascension
     float RA = RAD_TO_DEG * atan(0.91764 * tan(DEG_TO_RAD * L));
     RA = fmod(RA + 360.0, 360.0);
-
-    // Right ascension value needs to be in the same quadrant as L
     float Lquadrant = floor(L / 90.0) * 90.0;
     float RAquadrant = floor(RA / 90.0) * 90.0;
     RA = RA + (Lquadrant - RAquadrant);
     RA /= 15.0;
 
-    // Calculate the Sun's declination
+    // Sun's declination
     float sinDec = 0.39782 * sin(DEG_TO_RAD * L);
     float cosDec = cos(asin(sinDec));
 
-    // Calculate the Sun's local hour angle
     float cosH = (cos(DEG_TO_RAD * 90.833) - (sinDec * sin(DEG_TO_RAD * lat))) / (cosDec * cos(DEG_TO_RAD * lat));
-    if (cosH > 1) {
-        return 0; // The sun never rises on this location (on the specified date)
-    }
-    if (cosH < -1) {
-        return 0; // The sun never sets on this location (on the specified date)
-    }
+    if (cosH > 1 || cosH < -1) return;
 
-    float H = calculateSunrise ? 360.0 - RAD_TO_DEG * acos(cosH) : RAD_TO_DEG * acos(cosH);
+    float H = isSunrise ? 360.0 - RAD_TO_DEG * acos(cosH) : RAD_TO_DEG * acos(cosH);
     H /= 15.0;
 
-    // Calculate local mean time of rising/setting
     float T = H + RA - (0.06571 * t) - 6.622;
+    if (T < 0) T += 24.0;
+    T = fmod(T + 24.0, 24.0);  // Normalize
 
-    // Ensure T is within a valid range
-    if (T < 0) {
-        T += 24.0;
-    }
-    T = fmod(T + 24.0, 24.0);  // Normalize T to 0-24 hours
-
-    // Convert T to UTC
     float UT = fmod(T - lngHour + 24.0, 24.0);
+    timeinfo.tm_year = year - 1900;
+    timeinfo.tm_mon = month - 1;
+    timeinfo.tm_mday = day;
+    timeinfo.tm_hour = int(UT);
+    timeinfo.tm_min = int((UT - int(UT)) * 60);
+    timeinfo.tm_sec = 0;
 
-    // Convert UT to hours and minutes
-    timeinfo->tm_hour = int(UT);
-    timeinfo->tm_min = int((UT - int(UT)) * 60);
-    timeinfo->tm_sec = 0;
+    time_t finalTime = manualTimeT(&timeinfo);
 
-    // Manually calculate time_t in UTC
-    time_t finalTime = manualTimeT(timeinfo);
-
-    // Debugging output for UTC time
-    Serial.print(calculateSunrise ? "Sunrise UTC Time before adjustment: " : "Sunset UTC Time before adjustment: ");
+    Serial.print(isSunrise ? "Sunrise UTC Time before adjustment: " : "Sunset UTC Time before adjustment: ");
     Serial.println(ctime(&finalTime));
 
-    // Adjust for Time Zone and DST
-    int timezoneOffset = TIMEZONE_OFFSET;  // Standard Time offset (e.g., UTC+1)
-    Serial.print("Applying Time Zone Offset: ");
-    Serial.println(timezoneOffset);
+    int timezoneOffset = TIMEZONE_OFFSET;
+    finalTime += timezoneOffset * 3600;
 
-    if (isDST()) {
-        Serial.println("DST is in effect. Adding an additional hour.");
-        timezoneOffset += 1;  // Add one hour for DST
-    } else {
-        Serial.println("DST is not in effect.");
-    }
-
-    finalTime += timezoneOffset * 3600;  // Adjust by timezone
-
-    // Debugging output for local time after adjustments
-    Serial.print(calculateSunrise ? "Sunrise Local Time after adjustment: " : "Sunset Local Time after adjustment: ");
+    Serial.print(isSunrise ? "Sunrise Local Time after adjustment: " : "Sunset Local Time after adjustment: ");
     Serial.println(ctime(&finalTime));
 
-    // Store calculated times in global variables
-    if (calculateSunrise) {
+    if (isSunrise) {
         storedSunriseTime = finalTime;
     } else {
         storedSunsetTime = finalTime;
     }
-
-    return finalTime;
 }
 
 SunriseSunsetTimes getSunriseSunsetTimes() {
     // This function will return the stored times without recalculating
     SunriseSunsetTimes times;
-    times.sunrise = storedSunriseTime ? storedSunriseTime : calculateSunriseSunset(true);
-    times.sunset = storedSunsetTime ? storedSunsetTime : calculateSunriseSunset(false);
+times.sunrise = storedSunriseTime;
+times.sunset = storedSunsetTime;
     return times;
 }
 
 // Function to determine if it is currently daytime
 bool isDayTime() {
     SunriseSunsetTimes times = getSunriseSunsetTimes();
-    time_t now = timeClient.getEpochTime(); // Also in UTC
-    return now >= times.sunrise && now < times.sunset;
+    time_t now = timeClient.getEpochTime();
+   return now >= times.sunrise && now < times.sunset;
 }
 
 bool isDST() {
     time_t now = timeClient.getEpochTime();
     struct tm *timeinfo = gmtime(&now);
-    int month = timeinfo->tm_mon + 1;
-    int day = timeinfo->tm_mday;
-    int weekday = timeinfo->tm_wday;
 
-    // DST is active from April 1st until October 27th inclusive
-    if (month > 3 && month < 10) return true;  // April to September
-    if (month == 3 && (day - weekday) >= 25) return true; // DST starts last Sunday in March
-    if (month == 10 && day <= 27) return true; // DST active through October 27 inclusive
+    int y = timeinfo->tm_year + 1900;
+    int m = timeinfo->tm_mon + 1;
+    int d = timeinfo->tm_mday;
 
-    return false; // Otherwise, DST is off
+    // Calculate last Sunday of March
+    int lastMarchSunday = 31 - ((5 + y * 5 / 4) % 7);
+    // Calculate last Sunday of October
+    int lastOctoberSunday = 31 - ((2 + y * 5 / 4) % 7);
+
+    if (m < 3 || m > 10) return false;
+    if (m > 3 && m < 10) return true;
+    if (m == 3 && d >= lastMarchSunday) return true;
+    if (m == 10 && d < lastOctoberSunday) return true;
+    return false;
+}
+int getDSTOffset() {
+  time_t now = timeClient.getEpochTime();
+  struct tm *timeinfo = gmtime(&now);
+  if (!timeinfo) return 3600;  // fallback if something fails
+
+  int month = timeinfo->tm_mon + 1;
+  int day = timeinfo->tm_mday;
+  int hour = timeinfo->tm_hour;
+
+  // DST from last Sunday in March (from 2:00) to last Sunday in October (until 3:00)
+  if (month > 3 && month < 10) return 7200;
+  if (month < 3 || month > 10) return 3600;
+
+  // Last Sunday of March
+  if (month == 3) {
+    int lastSunday = 31 - ((timeinfo->tm_wday + 31 - day) % 7);
+    if (day > lastSunday || (day == lastSunday && hour >= 2)) return 7200;
+    return 3600;
+  }
+
+  // Last Sunday of October
+  if (month == 10) {
+    int lastSunday = 31 - ((timeinfo->tm_wday + 31 - day) % 7);
+    if (day < lastSunday || (day == lastSunday && hour < 3)) return 7200;
+    return 3600;
+  }
+
+  return 3600;
 }

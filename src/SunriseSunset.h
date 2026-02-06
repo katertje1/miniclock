@@ -11,10 +11,11 @@ struct SunriseSunsetTimes {
 extern SunriseSunsetTimes getSunriseSunsetTimes();
 bool isDayTime();
 bool isDST();
+int getDSTOffset();
+
 
 extern time_t storedSunriseTime;
 extern time_t storedSunsetTime;
-time_t calculateSunriseSunset(bool calculateSunrise);
+void calculateSunriseSunset(bool isSunrise, int year, int month, int day);
 SunriseSunsetTimes getSunriseSunsetTimes();
-
 #endif // SUNRISE_SUNSET_H

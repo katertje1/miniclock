@@ -16,11 +16,14 @@ extern time_t lastSunsetTime;
 // Declare selectedClock as an index (int)
 struct ClockSettings {
     const char* deviceName;
-    uint32_t DEFAULT_HOUR_COLOR;       //default value for color of the hour digits
-    uint32_t DEFAULT_MINUTE_COLOR;   //default value for color of the minute digits
-    uint32_t DEFAULT_COLON_COLOR;     //default value for color of the hour digits
-    int brightnessOffsetDay;    // Brightness offset during the day
-    int brightnessOffsetNight;  // Brightness offset during the night
+    uint32_t DEFAULT_HOUR_COLOR;
+    uint32_t DEFAULT_MINUTE_COLOR;
+    uint32_t DEFAULT_COLON_COLOR;
+    uint32_t NIGHT_HOUR_COLOR;
+    uint32_t NIGHT_MINUTE_COLOR;
+    uint32_t NIGHT_COLON_COLOR;
+    int dayTimeBrightnessOffset;
+    int nightTimeBrightnessOffset;
 };
 
 extern int selectedClock;
@@ -38,9 +41,13 @@ extern NTPClient timeClient;                        //keeper of time
 extern const char* ntpServerName;                   //url of the timeserver
 
 //default clock colors
-extern uint32_t hourColor;                         //default value for color of the hour digits
-extern uint32_t minuteColor;                       //default value for color of the minute digits
-extern uint32_t colonColor;                        //default value for color of the hour digits
+extern uint32_t DEFAULT_HOUR_COLOR;
+extern uint32_t DEFAULT_MINUTE_COLOR;
+extern uint32_t DEFAULT_COLON_COLOR;
+
+extern uint32_t NIGHT_HOUR_COLOR;
+extern uint32_t NIGHT_MINUTE_COLOR;
+extern uint32_t NIGHT_COLON_COLOR;
 
 //brightness
 extern int dayTimeBrightnessOffset;                 //offset value for the brightness during daytime
@@ -54,6 +61,10 @@ extern bool isDaytime;                              //is it currently day? (or n
 extern unsigned long modeStartTime;
 extern uint8_t currentBrightness;                   //current Brightness value
 extern const char* softwareVersion;                 //software version this clock is running
+
+extern uint32_t hourColor;
+extern uint32_t minuteColor;
+extern uint32_t colonColor;
 
 #define TIMEZONE_OFFSET 1  // Adjust this to your specific timezone offset (e.g., 1 for UTC+1)
 

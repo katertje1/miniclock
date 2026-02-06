@@ -1,2 +1,5 @@
+.pio
 .DS_Store
-Settings.cpp
+.vscode/
+/src/Settings.cpp
+/data/

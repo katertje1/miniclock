@@ -1,3 +1,4 @@
+/*
 #include "Settings.h"
 
 
@@ -46,5 +47,4 @@ unsigned long modeStartTime = 0;
 bool isDaytime = true;
 const char* softwareVersion = "";
 
-
-
+*/
