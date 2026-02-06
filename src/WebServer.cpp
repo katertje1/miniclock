@@ -2,8 +2,10 @@
 #include "Settings.h"
 #include "ClockDisplay.h"
 #include <ArduinoJson.h>
+#include <LittleFS.h>
 
 ESP8266WebServer server(80);
+static bool fsReady = false;
 
 // Variables for stopwatch functionality
 bool stopwatchRunning = false;
@@ -30,6 +32,38 @@ void handleNotFound() {
     addGlobalCORSHeaders();  // Add CORS headers for other requests
     server.send(404, "text/plain", "Not Found");
   }
+}
+
+void handleController() {
+  if (!fsReady) {
+    fsReady = LittleFS.begin();
+  }
+  if (!fsReady) {
+    server.send(500, "text/plain", "Filesystem not available");
+    return;
+  }
+  if (!LittleFS.exists("/controller.html")) {
+    server.send(404, "text/plain", "controller.html not found");
+    return;
+  }
+  File f = LittleFS.open("/controller.html", "r");
+  if (!f) {
+    server.send(500, "text/plain", "Failed to open controller.html");
+    return;
+  }
+  server.streamFile(f, "text/html");
+  f.close();
+}
+
+void handleGetClockList() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < clockConfigCount; i++) {
+    arr.add(clockConfigs[i].deviceName);
+  }
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
 }
 
 void handleRoot() {
@@ -386,11 +420,16 @@ htmlPage += "}, 5000);";  // Every 5 seconds, fetch updates only when not select
 }
 
 void initWebServer() {
+  if (!fsReady) {
+    fsReady = LittleFS.begin();
+  }
   // Handle CORS preflight and not found requests globally
   server.onNotFound(handleNotFound);
 
   // Define actual routes
   server.on("/", handleRoot);
+  server.on("/controller", handleController);
+  server.on("/getClockList", []() { addGlobalCORSHeaders(); handleGetClockList(); });
   server.on("/getDeviceName", []() { addGlobalCORSHeaders(); handleGetDeviceName(); });
   server.on("/getSoftwareVersion", []() { addGlobalCORSHeaders(); handleGetSoftwareVersion(); });
   server.on("/getCurrentMode", []() { addGlobalCORSHeaders(); handleGetCurrentMode(); });

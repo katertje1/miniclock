@@ -9,6 +9,8 @@ extern ESP8266WebServer server;
 
 void initWebServer();
 void handleRoot();
+void handleController();
+void handleGetClockList();
 void handleGetDeviceName();
 void handleGetSoftwareVersion();
 void handleGetCurrentMode();

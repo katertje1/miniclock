@@ -40,6 +40,10 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - Optional: create `tools/upload.local.json` if you want per‑clock `ota_host` overrides.
    - `tools/ports.py` prints available `/dev/cu.*` ports.
 
+6. **Controller Page**:
+   - The controller UI is served from `data/controller.html` at `/controller`.
+   - After editing `data/controller.html`, upload the filesystem with: `pio run -t uploadfs`.
+
 ### Usage
 
 - **Time Display**: The clock displays the current time on the WS2812B LED strip, with smooth brightness transitions based on ambient light levels.

@@ -30,6 +30,7 @@ struct ClockSettings {
 
 extern int selectedClock;
 extern ClockSettings clockConfigs[];
+extern const int clockConfigCount;
 extern ClockSettings currentConfig;
 
 //wifi
