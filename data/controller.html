@@ -173,35 +173,35 @@
       return name.replace(/_/g, ' ');
     }
 
-    function buildSelect() {
+    function buildSelect(reachableHosts, reachableNames) {
       const select = document.getElementById('targetClock');
       select.innerHTML = '';
       const allOpt = document.createElement('option');
       allOpt.value = 'all';
       allOpt.textContent = 'All Clocks';
       select.appendChild(allOpt);
-      clockHosts.forEach((host, index) => {
+      reachableHosts.forEach((host, index) => {
         const opt = document.createElement('option');
         opt.value = host;
-        opt.textContent = displayName(clockNames[index]);
+        opt.textContent = displayName(reachableNames[index]);
         select.appendChild(opt);
       });
     }
 
-    function buildTable() {
+    function buildTable(reachableHosts, reachableNames) {
       const thead = document.getElementById('clockTableHead');
       const tbody = document.getElementById('clockTableBody');
       thead.innerHTML = '';
       tbody.innerHTML = '';
 
       const headerRow = document.createElement('tr');
-      clockHosts.forEach((host, index) => {
+      reachableHosts.forEach((host, index) => {
         const th = document.createElement('th');
         const a = document.createElement('a');
         a.href = `http://${host}`;
         a.target = '_blank';
         a.id = `deviceName-${index}`;
-        a.textContent = displayName(clockNames[index]);
+        a.textContent = displayName(reachableNames[index]);
         th.appendChild(a);
         headerRow.appendChild(th);
       });
@@ -220,7 +220,7 @@
 
       rows.forEach(rowId => {
         const tr = document.createElement('tr');
-        clockHosts.forEach((_, index) => {
+        reachableHosts.forEach((_, index) => {
           const td = document.createElement('td');
           td.id = `${rowId}-${index}`;
           if (rowId === 'hourColor' || rowId === 'minuteColor') {
@@ -279,8 +279,8 @@
         });
     }
 
-    function updateTable() {
-      clockHosts.forEach((host, index) => {
+    function updateTable(reachableHosts) {
+      reachableHosts.forEach((host, index) => {
         fetchClockData(host).then(data => {
           if (data) {
             document.getElementById(`deviceName-${index}`).innerText = data.deviceName;
@@ -308,8 +308,24 @@
 
     function updateDebugTablePeriodically() {
       setInterval(() => {
-        updateTable();  // Call the function to update the table every 10 seconds
+        updateTable(clockHosts);  // Call the function to update the table every 10 seconds
       }, 10000);  // Every 10 seconds
+    }
+
+    function withTimeout(ms) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ms);
+      return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+    }
+
+    function probeHost(host) {
+      const t = withTimeout(2000);
+      return fetch(`http://${host}/getDeviceName`, { signal: t.signal })
+        .then(res => {
+          t.cancel();
+          return res.ok;
+        })
+        .catch(() => false);
     }
 
     function loadClockList() {
@@ -318,10 +334,22 @@
         .then(names => {
           clockNames = names;
           clockHosts = names.map(n => `${n}.local`);
-          buildSelect();
-          buildTable();
-          updateTable();
-          updateDebugTablePeriodically();
+          Promise.all(clockHosts.map(probeHost)).then(results => {
+            const reachableNames = [];
+            const reachableHosts = [];
+            results.forEach((ok, idx) => {
+              if (ok) {
+                reachableNames.push(clockNames[idx]);
+                reachableHosts.push(clockHosts[idx]);
+              }
+            });
+            clockNames = reachableNames;
+            clockHosts = reachableHosts;
+            buildSelect(clockHosts, clockNames);
+            buildTable(clockHosts, clockNames);
+            updateTable(clockHosts);
+            updateDebugTablePeriodically();
+          });
         })
         .catch(error => console.error('Error loading clock list:', error));
     }

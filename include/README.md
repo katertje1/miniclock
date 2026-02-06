@@ -33,16 +33,19 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - Ensure the device is on Wi‑Fi.
    - OTA uses mDNS by default: `<deviceName>.local` (set via `currentConfig.deviceName`).
    - Upload via OTA with: `pio run -e nodemcuv2_ota -t upload`
+   - If mDNS fails, use the IP address: `pio run -e nodemcuv2_ota -t upload --upload-port 192.168.1.x`
 
 5. **Upload Helper (no IPs in git)**:
    - Run: `tools/upload.py` and select a clock + method.
    - The clock list is read from `src/Settings.cpp` every run.
    - Optional: create `tools/upload.local.json` if you want per‑clock `ota_host` overrides.
    - `tools/ports.py` prints available `/dev/cu.*` ports.
+   - The helper can upload firmware, filesystem, or both (useful for `/controller`).
 
 6. **Controller Page**:
    - The controller UI is served from `data/controller.html` at `/controller`.
-   - After editing `data/controller.html`, upload the filesystem with: `pio run -t uploadfs`.
+   - After editing `data/controller.html`, upload the filesystem with: `pio run -t uploadfs` or `pio run -e nodemcuv2_ota -t uploadfs --upload-port <ip>`.
+   - The controller uses `/getClockList` and only shows reachable clocks.
 
 ### Usage
 

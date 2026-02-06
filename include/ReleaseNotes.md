@@ -5,6 +5,9 @@ Version 0.211 - February 6, 2026
 - Added OTA support (ArduinoOTA) and mDNS-based uploads using <deviceName>.local.
 - Added upload helper scripts (tools/upload.py, tools/ports.py) to select clock and upload method.
 - Wi‑Fi credentials are now per‑clock in clockConfigs (Settings.cpp).
+- Controller is served from LittleFS (`/controller`) and uses `/getClockList` with mDNS hosts.
+- Controller now shows only reachable clocks.
+- Upload helper can do firmware, filesystem, or both with OTA wait/retry.
 - Updated warnings/cleanup from the PlatformIO migration.
 
 Version 0.210 - 27 October 2024

@@ -2,8 +2,11 @@
 import json
 import os
 import re
+import socket
+import http.client
 import subprocess
 import sys
+import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CFG_PATH = os.path.join(ROOT, "tools", "upload.local.json")
@@ -38,7 +41,6 @@ def parse_clock_names_from_settings():
     if not os.path.exists(SETTINGS_CPP):
         return []
     text = open(SETTINGS_CPP, "r", encoding="utf-8").read()
-    # Grab first string literal in each clock config entry.
     return re.findall(r"\{\s*\"([^\"]+)\"", text)
 
 
@@ -50,7 +52,6 @@ def merge_clocks(settings_names, local_clocks):
             merged.append(by_name[name])
         else:
             merged.append({"name": name})
-    # If settings list is empty, fall back to local list
     return merged if merged else local_clocks
 
 
@@ -80,8 +81,7 @@ def list_usb_ports():
             ["/bin/sh", "-c", "ls /dev/cu.* 2>/dev/null"],
             text=True,
         )
-        ports = [p.strip() for p in out.splitlines() if p.strip()]
-        return ports
+        return [p.strip() for p in out.splitlines() if p.strip()]
     except subprocess.CalledProcessError:
         return []
 
@@ -100,6 +100,26 @@ def mdns_name_from_label(label):
     safe = label.replace(" ", "_")
     safe = "".join(ch for ch in safe if ch.isalnum() or ch in ("_", "-"))
     return f"{safe}.local" if safe else None
+
+
+def wait_for_http(host, timeout_s=90):
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            # Try TCP connect first
+            with socket.create_connection((host, 80), timeout=2):
+                pass
+            # Then try a simple HTTP GET to be sure web server is up
+            conn = http.client.HTTPConnection(host, 80, timeout=2)
+            conn.request("GET", "/getDeviceName")
+            resp = conn.getresponse()
+            resp.read()
+            conn.close()
+            if resp.status == 200:
+                return True
+        except OSError:
+            time.sleep(2)
+    return False
 
 
 def main():
@@ -128,17 +148,36 @@ def main():
     if ota_target:
         methods.append("OTA")
     methods.append("USB")
-
     method = choose(methods, "Upload method?")
 
+    actions = ["Firmware only", "Firmware + Filesystem", "Filesystem only"]
+    action = choose(actions, "What to upload?")
+
     if method == "OTA":
-        run_pio(["run", "-e", "nodemcuv2_ota", "-t", "upload", "--upload-port", ota_target])
+        if action in ("Firmware only", "Firmware + Filesystem"):
+            run_pio(["run", "-e", "nodemcuv2_ota", "-t", "upload", "--upload-port", ota_target])
+            if action == "Firmware + Filesystem":
+                print("Waiting for device to reboot before filesystem upload...")
+                if not wait_for_http(ota_target, timeout_s=90):
+                    die("Device not reachable yet. Try 'Filesystem only' again in a moment.")
+        if action in ("Filesystem only", "Firmware + Filesystem"):
+            # One retry helps if the device is still rebooting.
+            try:
+                time.sleep(5)
+                run_pio(["run", "-e", "nodemcuv2_ota", "-t", "uploadfs", "--upload-port", ota_target])
+            except subprocess.CalledProcessError:
+                print("Filesystem upload failed, retrying in 5 seconds...")
+                time.sleep(5)
+                run_pio(["run", "-e", "nodemcuv2_ota", "-t", "uploadfs", "--upload-port", ota_target])
     else:
         ports = list_usb_ports()
         if not ports:
             die("No /dev/cu.* ports found. Plug in the board and try again.")
         upload_port = choose(ports, "Select USB port")
-        run_pio(["run", "-e", "nodemcuv2", "-t", "upload", "--upload-port", upload_port])
+        if action in ("Firmware only", "Firmware + Filesystem"):
+            run_pio(["run", "-e", "nodemcuv2", "-t", "upload", "--upload-port", upload_port])
+        if action in ("Filesystem only", "Firmware + Filesystem"):
+            run_pio(["run", "-e", "nodemcuv2", "-t", "uploadfs", "--upload-port", upload_port])
 
     save_json(STATE_PATH, {"last_clock": choice})
 
