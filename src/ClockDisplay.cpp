@@ -180,6 +180,17 @@ static uint16_t rainbowHue = 0;
 static unsigned long foodLastUpdate = 0;
 static uint8_t foodStep = 0;
 static uint8_t foodCycles = 0;
+static bool stopwatchRunning = false;
+static unsigned long stopwatchRemainingMs = 0;
+static unsigned long stopwatchStartedAtMs = 0;
+static bool stopwatchBlinking = false;
+static bool stopwatchBlinkVisible = true;
+static uint8_t stopwatchBlinkToggleCount = 0;
+static unsigned long stopwatchBlinkLastMs = 0;
+
+static const unsigned long STOPWATCH_BLINK_INTERVAL_MS = 250;
+static const uint8_t STOPWATCH_BLINK_TOGGLES = 10;  // 5x on/off
+static const uint32_t STOPWATCH_MAX_MS = 99UL * 60UL * 1000UL + 59UL * 1000UL;
 
 static void drawFoodWord(uint32_t color) {
     displayLetter(0, 'F', color);
@@ -239,6 +250,109 @@ void clearstrip(){
   strip.clear();
 }
 
+unsigned long stopwatchGetRemainingMs() {
+    if (!stopwatchRunning) {
+        return stopwatchRemainingMs;
+    }
+    unsigned long elapsed = millis() - stopwatchStartedAtMs;
+    if (elapsed >= stopwatchRemainingMs) {
+        return 0;
+    }
+    return stopwatchRemainingMs - elapsed;
+}
+
+bool stopwatchIsRunning() {
+    return stopwatchRunning;
+}
+
+void stopwatchStart() {
+    if (stopwatchRunning || stopwatchRemainingMs == 0) {
+        return;
+    }
+    stopwatchStartedAtMs = millis();
+    stopwatchRunning = true;
+    stopwatchBlinking = false;
+    stopwatchBlinkVisible = true;
+    stopwatchBlinkToggleCount = 0;
+}
+
+void stopwatchStop() {
+    if (!stopwatchRunning) {
+        return;
+    }
+    stopwatchRemainingMs = stopwatchGetRemainingMs();
+    stopwatchRunning = false;
+}
+
+void stopwatchReset() {
+    stopwatchRunning = false;
+    stopwatchRemainingMs = 0;
+    stopwatchStartedAtMs = 0;
+    stopwatchBlinking = false;
+    stopwatchBlinkVisible = true;
+    stopwatchBlinkToggleCount = 0;
+    stopwatchBlinkLastMs = 0;
+}
+
+void stopwatchAddMinute() {
+    unsigned long remaining = stopwatchGetRemainingMs();
+    unsigned long added = remaining + 60000UL;
+    if (added > STOPWATCH_MAX_MS) {
+        added = STOPWATCH_MAX_MS;
+    }
+    stopwatchRemainingMs = added;
+    if (stopwatchRunning) {
+        stopwatchStartedAtMs = millis();
+    }
+    stopwatchBlinking = false;
+    stopwatchBlinkVisible = true;
+    stopwatchBlinkToggleCount = 0;
+}
+
+static void renderStopwatch(unsigned long now) {
+    unsigned long remaining = stopwatchGetRemainingMs();
+
+    if (stopwatchRunning && remaining == 0) {
+        stopwatchRunning = false;
+        stopwatchRemainingMs = 0;
+        stopwatchBlinking = true;
+        stopwatchBlinkVisible = false;
+        stopwatchBlinkToggleCount = 0;
+        stopwatchBlinkLastMs = now;
+    }
+
+    if (stopwatchBlinking && now - stopwatchBlinkLastMs >= STOPWATCH_BLINK_INTERVAL_MS) {
+        stopwatchBlinkLastMs = now;
+        stopwatchBlinkVisible = !stopwatchBlinkVisible;
+        stopwatchBlinkToggleCount++;
+        if (stopwatchBlinkToggleCount >= STOPWATCH_BLINK_TOGGLES) {
+            stopwatchBlinking = false;
+            stopwatchBlinkVisible = true;
+        }
+    }
+
+    if (stopwatchBlinking && !stopwatchBlinkVisible) {
+        strip.clear();
+        strip.show();
+        return;
+    }
+
+    unsigned long totalSeconds = (remaining + 999UL) / 1000UL;
+    if (remaining == 0) {
+        totalSeconds = 0;
+    }
+    int minutes = (int)(totalSeconds / 60UL);
+    int seconds = (int)(totalSeconds % 60UL);
+
+    strip.clear();
+    displayDigit(0, (minutes / 10) % 10, hourColor);
+    displayDigit(7, minutes % 10, hourColor);
+    displayColon();
+    displayDigit(16, seconds / 10, minuteColor);
+    displayDigit(23, seconds % 10, minuteColor);
+    strip.show();
+}
+
 void updateModeDisplay() {
     unsigned long now = millis();
     if (currentMode != lastRenderedMode) {
@@ -261,6 +375,8 @@ void updateModeDisplay() {
             rainbowHue += 256;
             displayRainbowMode();
         }
+    } else if (currentMode == STOPWATCH_MODE) {
+        renderStopwatch(now);
     } else if (currentMode == FOOD_MODE) {
         displayFoodMode();
     } else if (currentMode == LOVE_MODE) {

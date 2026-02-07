@@ -7,10 +7,6 @@
 ESP8266WebServer server(80);
 static bool fsReady = false;
 
-// Variables for stopwatch functionality
-bool stopwatchRunning = false;
-unsigned long stopwatchStart = 0;
-
 // Function to add CORS headers globally
 void addGlobalCORSHeaders() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -151,8 +147,12 @@ void handleRoot() {
 
   // Other tabs and buttons for stopwatch, love, rainbow, and food modes
   htmlPage += "<div id='Stopwatch' class='tabcontent'>";
-  htmlPage += "<button type='button' class='modeButton' data-url='/setStopwatchMode' disabled>Activate Stopwatch Mode</button>";
-  htmlPage += "<p>not implemented yet</p>";
+  htmlPage += "<button type='button' class='modeButton' data-url='/setStopwatchMode'>Activate Stopwatch Mode</button>";
+  htmlPage += "<button type='button' onclick='stopwatchAction(\"start\")'>Start</button>";
+  htmlPage += "<button type='button' onclick='stopwatchAction(\"stop\")'>Stop</button>";
+  htmlPage += "<button type='button' onclick='stopwatchAction(\"reset\")'>Reset</button>";
+  htmlPage += "<button type='button' onclick='stopwatchAction(\"addMinute\")'>Add 1 minute</button>";
+  htmlPage += "<p>Stopwatch: <span id='stopwatchDisplay'>00:00</span> <small id='stopwatchState'>(stopped)</small></p>";
   htmlPage += "</div>";
 
   htmlPage += "<div id='Love' class='tabcontent'>";
@@ -396,12 +396,43 @@ htmlPage += "    }";
 htmlPage += "  }).catch(error => console.error('Error updating colon color:', error));";
 htmlPage += "}";
 
+htmlPage += "function formatStopwatch(seconds) {";
+htmlPage += "  const m = Math.floor(seconds / 60);";
+htmlPage += "  const s = seconds % 60;";
+htmlPage += "  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');";
+htmlPage += "}";
+
+htmlPage += "function fetchStopwatchStatus() {";
+htmlPage += "  fetch('/getStopwatchStatus')";
+htmlPage += "    .then(response => response.json())";
+htmlPage += "    .then(data => {";
+htmlPage += "      document.getElementById('stopwatchDisplay').innerText = formatStopwatch(data.remainingSeconds || 0);";
+htmlPage += "      document.getElementById('stopwatchState').innerText = data.running ? '(running)' : '(stopped)';";
+htmlPage += "    })";
+htmlPage += "    .catch(error => console.error('Error fetching stopwatch status:', error));";
+htmlPage += "}";
+
+htmlPage += "function stopwatchAction(action) {";
+htmlPage += "  const map = { start: '/startStopwatch', stop: '/stopStopwatch', reset: '/resetStopwatch', addMinute: '/addStopwatchMinute' };";
+htmlPage += "  const url = map[action];";
+htmlPage += "  if (!url) return;";
+htmlPage += "  fetch(url, { method: 'POST' })";
+htmlPage += "    .then(response => {";
+htmlPage += "      if (!response.ok) throw new Error('Request failed');";
+htmlPage += "      fetchStopwatchStatus();";
+htmlPage += "    })";
+htmlPage += "    .catch(error => showNotification('Stopwatch action failed: ' + error));";
+htmlPage += "}";
+
 htmlPage += "setInterval(function() {";
 htmlPage += "  fetchCurrentDateTime();";
 htmlPage += "  fetchColors();";
 htmlPage += "  fetchCurrentBrightness();";
 htmlPage += "  fetchBrightnessOffsets();";
 htmlPage += "}, 5000);";  // Every 5 seconds, fetch updates only when not selecting a color
+
+htmlPage += "setInterval(fetchStopwatchStatus, 1000);";
+htmlPage += "fetchStopwatchStatus();";
 
 
   htmlPage += "</script>";
@@ -440,6 +471,8 @@ void initWebServer() {
   server.on("/startStopwatch", []() { addGlobalCORSHeaders(); startStopwatch(); });
   server.on("/stopStopwatch", []() { addGlobalCORSHeaders(); stopStopwatch(); });
   server.on("/resetStopwatch", []() { addGlobalCORSHeaders(); resetStopwatch(); });
+  server.on("/addStopwatchMinute", []() { addGlobalCORSHeaders(); addStopwatchMinute(); });
+  server.on("/getStopwatchStatus", []() { addGlobalCORSHeaders(); getStopwatchStatus(); });
 
   // Settings and other endpoints
   server.on("/resetColors", []() { addGlobalCORSHeaders(); resetColors(); });
@@ -549,9 +582,8 @@ void setClockMode() {
 
 void setStopwatchMode() {
   currentMode = STOPWATCH_MODE;
-  stopwatchRunning = false;
-  stopwatchStart = 0;
-  server.send(200, "text/html", "Stopwatch mode set. <a href=\"/\">Go Back</a>");
+  stopwatchStop();
+  server.send(200, "text/plain", "Stopwatch mode set");
 }
 
 void handleRainbowMode() {
@@ -570,23 +602,35 @@ void handleFoodMode() {
 }
 
 void startStopwatch() {
-  if (!stopwatchRunning) {
-    stopwatchRunning = true;
-    stopwatchStart = millis();
-  }
-  server.send(200, "text/html", "Stopwatch started. <a href=\"/\">Go Back</a>");
+  stopwatchStart();
+  server.send(200, "text/plain", "Stopwatch started");
 }
 
 void stopStopwatch() {
-  if (stopwatchRunning) {
-    stopwatchRunning = false;
-  }
-  server.send(200, "text/html", "Stopwatch stopped. <a href=\"/\">Go Back</a>");
+  stopwatchStop();
+  server.send(200, "text/plain", "Stopwatch stopped");
 }
 
 void resetStopwatch() {
-  stopwatchStart = 0;
-  server.send(200, "text/html", "Stopwatch reset. <a href=\"/\">Go Back</a>");
+  stopwatchReset();
+  server.send(200, "text/plain", "Stopwatch reset");
+}
+
+void addStopwatchMinute() {
+  stopwatchAddMinute();
+  server.send(200, "text/plain", "Stopwatch minute added");
+}
+
+void getStopwatchStatus() {
+  JsonDocument doc;
+  unsigned long remainingMs = stopwatchGetRemainingMs();
+  doc["running"] = stopwatchIsRunning();
+  doc["remainingMs"] = remainingMs;
+  doc["remainingSeconds"] = (remainingMs + 999UL) / 1000UL;
+
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
 }
 
 void resetColors() {

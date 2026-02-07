@@ -1,5 +1,20 @@
 # Release Notes
 /*
+Version 0.212 - February 7, 2026
+- Implemented stopwatch mode in firmware:
+  - Countdown render in `MM:SS` on the LED display.
+  - Added stopwatch state/actions: start, stop, reset, add 1 minute.
+  - Added zero-finish behavior: blink display 5 times, then keep showing `00:00`.
+- Added stopwatch API endpoints:
+  - `/startStopwatch`, `/stopStopwatch`, `/resetStopwatch`, `/addStopwatchMinute`, `/getStopwatchStatus`.
+- Updated device web UI (`/`) stopwatch tab:
+  - Added working buttons for start/stop/reset/add minute.
+  - Added live stopwatch status display.
+- Updated controller page (`/controller`):
+  - Added `Set Stopwatch Mode` as mode action.
+  - Added stopwatch action buttons for selected clock/all clocks.
+  - Stopwatch control section is shown only when one clock is selected and that clock is in `Stopwatch Mode`.
+
 Version 0.211 - February 6, 2026
 - Migrated project to PlatformIO structure (src/, include/, platformio.ini).
 - Added OTA support (ArduinoOTA) and mDNS-based uploads using <deviceName>.local.
@@ -182,7 +197,6 @@ Version 0.203 - August 29, 2024
 ---
 
 ## Future versions
-- Add stopwatch functionality to both the website and the clock.
 - add a small speaker
 - add an alarm function
 - what to do with the colon in clock mode

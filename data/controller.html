@@ -156,9 +156,19 @@
       <h2>Modes</h2>
       <div style="text-align: center;">
         <button onclick="setMode('Clock')">Set Clock Mode</button>
+        <button onclick="setMode('Stopwatch')">Set Stopwatch Mode</button>
         <button onclick="setMode('Love')">Set Love Mode</button>
         <button onclick="setMode('Food')">Set Food Mode</button>
         <button onclick="setMode('Rainbow')">Set Rainbow Mode</button>
+      </div>
+    </div>
+    <div id="section-stopwatch" style="display: none;">
+      <h2>Stopwatch</h2>
+      <div style="text-align: center;">
+        <button onclick="sendNamedCommand('startStopwatch')">Start</button>
+        <button onclick="sendNamedCommand('stopStopwatch')">Stop</button>
+        <button onclick="sendNamedCommand('resetStopwatch')">Reset</button>
+        <button onclick="sendNamedCommand('addStopwatchMinute')">Add 1 minute</button>
       </div>
     </div>
   </div>
@@ -174,6 +184,7 @@
     let clockNames = [];
     let clockHosts = [];
     let probeStates = [];
+    let statusByHost = {};
 
     function displayName(name) {
       return name.replace(/_/g, ' ');
@@ -273,6 +284,23 @@
       sendCommand(`set${mode}Mode`, target);
     }
 
+    function sendNamedCommand(command) {
+      const target = document.getElementById('targetClock').value;
+      sendCommand(command, target);
+    }
+
+    function refreshStopwatchVisibility() {
+      const section = document.getElementById('section-stopwatch');
+      const target = document.getElementById('targetClock').value;
+      if (target === 'all') {
+        section.style.display = 'none';
+        return;
+      }
+      const status = statusByHost[target];
+      const mode = status && status.currentMode ? status.currentMode : '';
+      section.style.display = mode === 'Stopwatch Mode' ? 'block' : 'none';
+    }
+
     function fetchClockData(host) {
       return fetch(`http://${host}/getStatus`)
         .then(response => response.json())
@@ -286,6 +314,7 @@
       reachableHosts.forEach((host, index) => {
         fetchClockData(host).then(data => {
           if (data) {
+            statusByHost[host] = data;
             document.getElementById(`deviceName-${index}`).innerText = data.deviceName;
             document.getElementById(`softwareVersion-${index}`).innerText = data.softwareVersion;
             document.getElementById(`currentTime-${index}`).innerText = data.currentTime;
@@ -304,6 +333,11 @@
             minuteColorElem.style.backgroundColor = data.minuteColor.startsWith('#') ? data.minuteColor : `#${data.minuteColor}`;
             minuteColorElem.style.color = 'black';
             minuteColorElem.innerText = data.minuteColor;
+
+            const selectedTarget = document.getElementById('targetClock').value;
+            if (selectedTarget === host) {
+              refreshStopwatchVisibility();
+            }
           }
         });
       });
@@ -369,13 +403,15 @@
             clockHosts = reachableHosts;
             const noClocks = clockHosts.length === 0;
             document.getElementById('noClocksMessage').style.display = noClocks ? 'block' : 'none';
-            document.querySelectorAll('#section-modes button').forEach(btn => {
+            document.querySelectorAll('#sections button').forEach(btn => {
               btn.disabled = noClocks;
             });
             buildSelect(clockHosts, clockNames);
+            document.getElementById('targetClock').addEventListener('change', refreshStopwatchVisibility);
             buildTable(clockHosts, clockNames);
             updateTable(clockHosts);
             updateDebugTablePeriodically();
+            refreshStopwatchVisibility();
           });
         })
         .catch(error => console.error('Error loading clock list:', error));

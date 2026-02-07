@@ -25,6 +25,8 @@ void handleRainbowMode();
 void startStopwatch();
 void stopStopwatch();
 void resetStopwatch();
+void addStopwatchMinute();
+void getStopwatchStatus();
 void handleLoveMode();
 void handleFoodMode();
 void setBrightnessOffsets();

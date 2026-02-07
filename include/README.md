@@ -49,6 +49,8 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - Hostnames are generated as `<clockName>.local` with lowercase and underscores.
    - The current device is auto-selected in the dropdown when opening `/controller` on that device.
    - Use **Show Probe Targets** to inspect which hosts are being probed and whether they are reachable.
+   - Controller supports stopwatch commands for selected clock(s): `Set Stopwatch Mode`, `Start`, `Stop`, `Reset`, `Add 1 minute`.
+   - Stopwatch controls are only shown when one clock is selected and that clock reports `Stopwatch Mode`.
 
 7. **Diagnostics Endpoint**:
    - Use `/getDiagnostics` to inspect runtime and reset state without USB serial.
@@ -60,5 +62,9 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
 - **Nighttime Mode**: During nighttime, the digits on the clock turn red for better visibility.
 - **Brightness Adjustment**: The brightness of the LED strip is automatically adjusted to ensure the clock is readable under various lighting conditions.
 - **Mode Rendering**: Rainbow/Food modes are rendered non-blocking so OTA/webserver stay responsive.
+- **Stopwatch Mode**:
+  - Countdown in `MM:SS` on the LED display.
+  - Controls via web UI and controller (`start/stop/reset/add minute`).
+  - When timer reaches `00:00`, display blinks 5 times, then stays on `00:00`.
 - **Wi‑Fi Robustness**: The device retries Wi‑Fi connection in the main loop when disconnected.
 ## Planned Features by Version

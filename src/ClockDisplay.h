@@ -15,6 +15,12 @@ void displayTime();
 void displayRainbowMode();  // Ensure this is declared
 void displayLoveMode();     // Ensure this is declared
 void displayFoodMode();     // Ensure this is declared
+void stopwatchStart();
+void stopwatchStop();
+void stopwatchReset();
+void stopwatchAddMinute();
+bool stopwatchIsRunning();
+unsigned long stopwatchGetRemainingMs();
 
 void clearstrip();
 
