@@ -187,7 +187,7 @@
     let statusByHost = {};
 
     function displayName(name) {
-      return name.replace(/_/g, ' ');
+      return name.replace(/[_-]/g, ' ');
     }
 
     function toMdnsHost(name) {
@@ -195,9 +195,10 @@
       const safe = name
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z0-9_]+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]+/g, '_')
         .replace(/_+/g, '_')
-        .replace(/^_|_$/g, '')
+        .replace(/-+/g, '-')
+        .replace(/^[-_]|[-_]$/g, '')
         .toLowerCase();
       return `${safe}.local`;
     }

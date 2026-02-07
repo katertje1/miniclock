@@ -14,6 +14,10 @@ Version 0.212 - February 7, 2026
   - Added `Set Stopwatch Mode` as mode action.
   - Added stopwatch action buttons for selected clock/all clocks.
   - Stopwatch control section is shown only when one clock is selected and that clock is in `Stopwatch Mode`.
+- Upload helper (`tools/upload.py`) was simplified again for speed:
+  - Removed heavy pre-upload hostname discovery checks.
+  - Uses direct target from `ota_host` or `<clockname>.local`.
+  - Keeps menu flow responsive before upload starts.
 
 Version 0.211 - February 6, 2026
 - Migrated project to PlatformIO structure (src/, include/, platformio.ini).

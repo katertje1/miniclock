@@ -44,12 +44,19 @@ def parse_clock_names_from_settings():
     return re.findall(r"\{\s*\"([^\"]+)\"", text)
 
 
+def normalize_clock_name(name):
+    if not name:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
 def merge_clocks(settings_names, local_clocks):
-    by_name = {c.get("name"): c for c in local_clocks if c.get("name")}
+    by_name = {normalize_clock_name(c.get("name")): c for c in local_clocks if c.get("name")}
     merged = []
     for name in settings_names:
-        if name in by_name:
-            merged.append(by_name[name])
+        key = normalize_clock_name(name)
+        if key in by_name:
+            merged.append(by_name[key])
         else:
             merged.append({"name": name})
     return merged if merged else local_clocks
@@ -95,11 +102,12 @@ def run_pio(args):
 def mdns_name_from_label(label):
     if not label:
         return None
+    label = label.strip()
     if label.endswith(".local"):
-        return label
+        return label.lower()
     safe = label.replace(" ", "_")
     safe = "".join(ch for ch in safe if ch.isalnum() or ch in ("_", "-"))
-    return f"{safe}.local" if safe else None
+    return f"{safe.lower()}.local" if safe else None
 
 
 def wait_for_http(host, timeout_s=90):
@@ -141,19 +149,19 @@ def main():
     clock = clocks[names.index(choice)]
 
     name = clock.get("name", "").strip()
-    derived_ota = mdns_name_from_label(name)
-    ota_target = clock.get("ota_host") or derived_ota
-
-    methods = []
-    if ota_target:
-        methods.append("OTA")
-    methods.append("USB")
+    methods = ["OTA", "USB"]
     method = choose(methods, "Upload method?")
 
     actions = ["Firmware only", "Firmware + Filesystem", "Filesystem only"]
     action = choose(actions, "What to upload?")
 
     if method == "OTA":
+        ota_target = (clock.get("ota_host") or mdns_name_from_label(name) or "").strip()
+        if not ota_target:
+            ota_target = input("Enter runtime OTA host/IP (blank to abort): ").strip()
+            if not ota_target:
+                die("No OTA target provided.")
+
         if action in ("Firmware only", "Firmware + Filesystem"):
             run_pio(["run", "-e", "nodemcuv2_ota", "-t", "upload", "--upload-port", ota_target])
             if action == "Firmware + Filesystem":
