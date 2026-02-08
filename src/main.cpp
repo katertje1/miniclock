@@ -219,6 +219,7 @@ const char* getClockModeString(ClockMode mode) {
     case CLOCK_MODE: return "Clock Mode";
     case STOPWATCH_MODE: return "Stopwatch Mode";
     case RAINBOW_MODE: return "Rainbow Mode";
+    case RAINBOW_CLOCK_MODE: return "Rainbow Clock Mode";
     case LOVE_MODE: return "Love Mode";
     case FOOD_MODE: return "Food Mode";
     default: return "Unknown Mode";

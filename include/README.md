@@ -54,10 +54,17 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - Controller now shows a diagnostics status cell per clock (from `/getDiagnostics`):
      - green for normal/system restart
      - red for crash-like signals (exception/watchdog/fatal/etc.)
+   - When a diagnostics cell is red, click it to open a popup with full diagnostics JSON and copy it.
 
 7. **Diagnostics Endpoint**:
    - Use `/getDiagnostics` to inspect runtime and reset state without USB serial.
+   - Response includes software version and (when time is synced) an estimated reset timestamp.
    - Example: `curl http://<deviceName>.local/getDiagnostics`
+
+8. **Device Page Diagnostics**:
+   - The root page (`/`) shows a diagnostics badge.
+   - Badge is color-coded (green/red/unknown).
+   - Click badge to open popup with full diagnostics JSON and copy button.
 
 ### Usage
 

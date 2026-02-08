@@ -5,6 +5,7 @@ Wi-Fi connected ESP8266 LED clock (WS2812B) with:
 - brightness control (day/night offsets)
 - multiple modes (Clock, Stopwatch, Love, Rainbow, Food)
 - web UI + multi-clock controller
+- diagnostics badge + crash details popup
 - OTA and USB upload support
 
 ## Quick Start
@@ -34,6 +35,10 @@ tools/upload.py
 - Device web UI: `http://<device>.local/`
 - Controller page: `http://<device>.local/controller`
 
+Diagnostics:
+- `/` shows a diagnostics status badge (green/red/unknown), click for full JSON.
+- `/controller` shows diagnostics per clock; red cells are clickable for detailed JSON.
+
 ## Project Structure
 
 - Firmware source: `src/`
@@ -48,4 +53,3 @@ tools/upload.py
 Local/private settings are intentionally not tracked:
 - `src/Settings.cpp`
 - `tools/upload.local.json`
-

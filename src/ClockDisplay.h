@@ -13,6 +13,7 @@ void displayLetter(int startIndex, char letter, uint32_t color);
 uint32_t Wheel(byte WheelPos);
 void displayTime();
 void displayRainbowMode();  // Ensure this is declared
+void displayRainbowClockMode();
 void displayLoveMode();     // Ensure this is declared
 void displayFoodMode();     // Ensure this is declared
 void stopwatchStart();

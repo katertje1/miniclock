@@ -123,6 +123,45 @@
       color: #37474f;
       font-weight: bold;
     }
+    td.diag-clickable {
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    #diagModal {
+      display: none;
+      position: fixed;
+      z-index: 1100;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.45);
+    }
+
+    #diagModalContent {
+      background: #fff;
+      margin: 8% auto;
+      padding: 14px;
+      border-radius: 8px;
+      width: 92%;
+      max-width: 760px;
+    }
+
+    #diagText {
+      width: 100%;
+      height: 220px;
+      font-family: monospace;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+
+    .diagBtnRow {
+      text-align: right;
+      margin-top: 8px;
+    }
 
     /* Section headers styling */
     h2 {
@@ -172,6 +211,7 @@
       <div style="text-align: center;">
         <button onclick="setMode('Clock')">Set Clock Mode</button>
         <button onclick="setMode('Stopwatch')">Set Stopwatch Mode</button>
+        <button onclick="setMode('RainbowClock')">Set Rainbow Clock Mode</button>
         <button onclick="setMode('Love')">Set Love Mode</button>
         <button onclick="setMode('Food')">Set Food Mode</button>
         <button onclick="setMode('Rainbow')">Set Rainbow Mode</button>
@@ -193,6 +233,16 @@
     <tbody id="clockTableBody"></tbody>
   </table>
   <p id="noClocksMessage" style="display: none; text-align: center; margin-top: 20px;">No reachable clocks found.</p>
+  <div id="diagModal">
+    <div id="diagModalContent">
+      <h3 id="diagTitle">Diagnostics</h3>
+      <textarea id="diagText" readonly></textarea>
+      <div class="diagBtnRow">
+        <button type="button" onclick="copyDiagnostics()">Copy</button>
+        <button type="button" onclick="closeDiagnosticsModal()">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Move JavaScript here to ensure DOM is loaded -->
   <script>
@@ -200,6 +250,7 @@
     let clockHosts = [];
     let probeStates = [];
     let statusByHost = {};
+    let selectedDiagnostics = null;
 
     function displayName(name) {
       return name.replace(/[_-]/g, ' ');
@@ -338,7 +389,7 @@
 
     function classifyDiagnostics(diag) {
       if (!diag || !diag.resetReason) {
-        return { text: "Unknown", cls: "diag-unknown", title: "No diagnostics data" };
+        return { text: "Unknown", cls: "diag-unknown", title: "No diagnostics data", isBad: false };
       }
       const reason = String(diag.resetReason || "");
       const info = String(diag.resetInfo || "");
@@ -346,12 +397,36 @@
       const badSignals = ["exception", "fatal", "wdt", "watchdog", "abort", "panic", "crash"];
       const hasCrashSignal = badSignals.some(s => combined.includes(s));
       if (hasCrashSignal) {
-        return { text: "Crash", cls: "diag-bad", title: `${reason} | ${info}` };
+        return { text: "Crash", cls: "diag-bad", title: `${reason} | ${info}`, isBad: true };
       }
       if (reason.includes("Software/System restart")) {
-        return { text: "Software/System restart", cls: "diag-good", title: `${reason} | ${info}` };
+        return { text: "Software/System restart", cls: "diag-good", title: `${reason} | ${info}`, isBad: false };
       }
-      return { text: "OK", cls: "diag-good", title: `${reason} | ${info}` };
+      return { text: "OK", cls: "diag-good", title: `${reason} | ${info}`, isBad: false };
+    }
+
+    function openDiagnosticsModal(clockName, host, diag) {
+      selectedDiagnostics = diag || null;
+      document.getElementById('diagTitle').innerText = `Diagnostics: ${displayName(clockName)} (${host})`;
+      document.getElementById('diagText').value = selectedDiagnostics
+        ? JSON.stringify(selectedDiagnostics, null, 2)
+        : 'No diagnostics data';
+      document.getElementById('diagModal').style.display = 'block';
+    }
+
+    function closeDiagnosticsModal() {
+      document.getElementById('diagModal').style.display = 'none';
+    }
+
+    function copyDiagnostics() {
+      const text = document.getElementById('diagText');
+      text.focus();
+      text.select();
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text.value);
+      } else {
+        document.execCommand('copy');
+      }
     }
 
     function updateTable(reachableHosts) {
@@ -370,6 +445,14 @@
             diagElem.classList.remove("diag-good", "diag-bad", "diag-unknown");
             diagElem.classList.add(diag.cls);
             diagElem.title = diag.title;
+            diagElem.classList.remove("diag-clickable");
+            diagElem.onclick = null;
+            if (diag.isBad) {
+              diagElem.classList.add("diag-clickable");
+              diagElem.title = `${diag.title} (click for details)`;
+              const clockName = data.deviceName || clockNames[index] || host;
+              diagElem.onclick = () => openDiagnosticsModal(clockName, host, data.diagnostics);
+            }
             document.getElementById(`currentMode-${index}`).innerText = data.currentMode;
             document.getElementById(`currentBrightness-${index}`).innerText = data.currentBrightness;
 
@@ -487,6 +570,12 @@
 
     window.onload = function () {
       loadClockList();
+      const modal = document.getElementById('diagModal');
+      window.addEventListener('click', function (event) {
+        if (event.target === modal) {
+          closeDiagnosticsModal();
+        }
+      });
     }
   </script>
 </body>

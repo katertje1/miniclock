@@ -44,6 +44,26 @@ def parse_clock_names_from_settings():
     return re.findall(r"\{\s*\"([^\"]+)\"", text)
 
 
+def set_selected_clock_in_settings(index):
+    if not os.path.exists(SETTINGS_CPP):
+        return
+    with open(SETTINGS_CPP, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    new_text, count = re.subn(
+        r"(?m)^\s*int\s+selectedClock\s*=\s*\d+\s*;",
+        f"int selectedClock = {index};",
+        text,
+        count=1,
+    )
+    if count == 0:
+        return
+    if new_text != text:
+        with open(SETTINGS_CPP, "w", encoding="utf-8") as f:
+            f.write(new_text)
+        print(f"Selected clock index set in Settings.cpp: {index}")
+
+
 def normalize_clock_name(name):
     if not name:
         return ""
@@ -146,7 +166,11 @@ def main():
     if last_clock in names:
         print(f"Last used: {last_clock} (press Enter to reuse)")
     choice = choose(names, "Which clock?", default=last_clock)
-    clock = clocks[names.index(choice)]
+    clock_index = names.index(choice)
+    clock = clocks[clock_index]
+
+    # Keep firmware target selection in sync with upload.py selection.
+    set_selected_clock_in_settings(clock_index)
 
     name = clock.get("name", "").strip()
     methods = ["OTA", "USB"]

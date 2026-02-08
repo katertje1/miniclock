@@ -9,7 +9,7 @@
 #define SOFTWARE_VERSION "dev"
 #endif
 
-enum ClockMode { CLOCK_MODE, STOPWATCH_MODE, RAINBOW_MODE, LOVE_MODE, FOOD_MODE };  // available modes for the clock
+enum ClockMode { CLOCK_MODE, STOPWATCH_MODE, RAINBOW_MODE, RAINBOW_CLOCK_MODE, LOVE_MODE, FOOD_MODE };  // available modes for the clock
 extern ClockMode currentMode;                       //current mode of the clock
 extern const char* getClockModeString(ClockMode mode);
 

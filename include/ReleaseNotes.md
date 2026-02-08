@@ -1,5 +1,22 @@
 # Release Notes
 /*
+Version 0.213 - February 8, 2026
+- Diagnostics improvements on both web pages:
+  - Device page (`/`) now shows a diagnostics badge (green/red/unknown).
+  - Clicking the diagnostics badge on `/` opens a popup with raw diagnostics JSON and copy button.
+  - Controller page diagnostics cells are now clickable when status is red (crash-like).
+  - Clicking a red diagnostics cell opens a popup with full diagnostics JSON and copy button.
+- Extended `/getDiagnostics` payload:
+  - Added `softwareVersion` in diagnostics response.
+  - Added time fields when NTP is synced:
+    - `timeSynced`
+    - `currentEpoch`
+    - `estimatedResetEpoch`
+    - `estimatedResetLocalTime`
+  - This makes it easier to identify on which build and around what time a crash/reset happened.
+- UI/UX:
+  - Controller keeps green/red diagnostics overview, now with deeper inspection only when needed.
+
 Version 0.212 - February 7, 2026
 - Implemented stopwatch mode in firmware:
   - Countdown render in `MM:SS` on the LED display.

@@ -22,6 +22,7 @@ void handleGetSunset();
 void setClockMode();
 void setStopwatchMode();
 void handleRainbowMode();
+void handleRainbowClockMode();
 void startStopwatch();
 void stopStopwatch();
 void resetStopwatch();

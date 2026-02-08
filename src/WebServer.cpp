@@ -75,6 +75,14 @@ void handleRoot() {
   htmlPage += "button:hover { background-color: #ddd; }";
   htmlPage += ".tab button.active { background-color: #ccc; }";
   htmlPage += ".tabcontent { display: none; padding: 6px 12px; border-top: none; }";
+  htmlPage += "#diagBadge { display: inline-block; margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }";
+  htmlPage += ".diagGood { background: #c8e6c9; color: #1b5e20; }";
+  htmlPage += ".diagBad { background: #ffcdd2; color: #b71c1c; }";
+  htmlPage += ".diagUnknown { background: #eceff1; color: #37474f; }";
+  htmlPage += "#diagModal { display: none; position: fixed; z-index: 1100; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); }";
+  htmlPage += "#diagModalContent { background: #fff; margin: 8% auto; padding: 14px; border-radius: 8px; width: 92%; max-width: 760px; }";
+  htmlPage += "#diagText { width: 100%; height: 220px; font-family: monospace; font-size: 13px; }";
+  htmlPage += ".diagBtnRow { text-align: right; margin-top: 8px; }";
 
   // Notification styling for popup at the bottom
   htmlPage += "#notification {";
@@ -112,10 +120,12 @@ void handleRoot() {
 
   // Add the current date and time to the HTML
   htmlPage += "<p id='currentDateTime'>" + String(timeStr) + "</p>";  // Display formatted time
+  htmlPage += "<p><span id='diagBadge' class='diagUnknown' onclick='openDiagnosticsModal()'>Diagnostics: Unknown</span></p>";
 
   htmlPage += "<div class='tab'>";
   htmlPage += "<button class='tablinks' onclick='openTab(event, \"Clock\")' id='clockTab'>Clock</button>";
   htmlPage += "<button class='tablinks' onclick='openTab(event, \"Stopwatch\")' id='stopwatchTab'>Stopwatch</button>";
+  htmlPage += "<button class='tablinks' onclick='openTab(event, \"RainbowClock\")' id='rainbowClockTab'>Rainbow Clock</button>";
   htmlPage += "<button class='tablinks' onclick='openTab(event, \"Love\")' id='loveTab'>Love</button>";
   htmlPage += "<button class='tablinks' onclick='openTab(event, \"Rainbow\")' id='rainbowTab'>Rainbow</button>";
   htmlPage += "<button class='tablinks' onclick='openTab(event, \"Food\")' id='foodTab'>Food</button>";
@@ -155,6 +165,10 @@ void handleRoot() {
   htmlPage += "<p>Stopwatch: <span id='stopwatchDisplay'>00:00</span> <small id='stopwatchState'>(stopped)</small></p>";
   htmlPage += "</div>";
 
+  htmlPage += "<div id='RainbowClock' class='tabcontent'>";
+  htmlPage += "<button type='button' class='modeButton' data-url='/setRainbowClockMode'>Activate Rainbow Clock Mode</button>";
+  htmlPage += "</div>";
+
   htmlPage += "<div id='Love' class='tabcontent'>";
   htmlPage += "<button type='button' class='modeButton' data-url='/setLoveMode'>Activate Love Mode</button>";
   htmlPage += "</div>";
@@ -169,8 +183,19 @@ void handleRoot() {
 
   // Popup Notification element
   htmlPage += "<div id='notification'></div>";
+  htmlPage += "<div id='diagModal'>";
+  htmlPage += "  <div id='diagModalContent'>";
+  htmlPage += "    <h3>Diagnostics</h3>";
+  htmlPage += "    <textarea id='diagText' readonly></textarea>";
+  htmlPage += "    <div class='diagBtnRow'>";
+  htmlPage += "      <button type='button' onclick='copyDiagnostics()'>Copy</button>";
+  htmlPage += "      <button type='button' onclick='closeDiagnosticsModal()'>Close</button>";
+  htmlPage += "    </div>";
+  htmlPage += "  </div>";
+  htmlPage += "</div>";
 
   htmlPage += "<script>";
+  htmlPage += "let lastDiagnostics = null;";
   htmlPage += "function openTab(evt, tabName) {";
   htmlPage += "  var i, tabcontent, tablinks;";
   htmlPage += "  tabcontent = document.getElementsByClassName('tabcontent');";
@@ -265,12 +290,74 @@ htmlPage += "document.getElementById('nightOffset').addEventListener('change', f
 htmlPage += "  submitBrightnessOffsets();";  // Submit the new values to the server
 htmlPage += "});";
   // Function to show notification popup and auto-hide after 10 seconds
-  htmlPage += "function showNotification(message) {";
+htmlPage += "function showNotification(message) {";
   htmlPage += "  var notification = document.getElementById('notification');";
   htmlPage += "  notification.innerText = message;";
   htmlPage += "  notification.classList.add('show');";
-  htmlPage += "  setTimeout(function() { notification.classList.remove('show'); }, 10000);";
-  htmlPage += "}";
+htmlPage += "  setTimeout(function() { notification.classList.remove('show'); }, 10000);";
+htmlPage += "}";
+
+htmlPage += "function classifyDiagnostics(diag) {";
+htmlPage += "  if (!diag || !diag.resetReason) { return { text: 'Diagnostics: Unknown', cls: 'diagUnknown' }; }";
+htmlPage += "  const reason = String(diag.resetReason || '');";
+htmlPage += "  const info = String(diag.resetInfo || '');";
+htmlPage += "  const combined = (reason + ' ' + info).toLowerCase();";
+htmlPage += "  const badSignals = ['exception', 'fatal', 'wdt', 'watchdog', 'abort', 'panic', 'crash'];";
+htmlPage += "  const isBad = badSignals.some(s => combined.includes(s));";
+htmlPage += "  if (isBad) { return { text: 'Diagnostics: Crash', cls: 'diagBad' }; }";
+htmlPage += "  if (reason.indexOf('Software/System restart') >= 0) { return { text: 'Diagnostics: Software/System restart', cls: 'diagGood' }; }";
+htmlPage += "  return { text: 'Diagnostics: OK', cls: 'diagGood' };";
+htmlPage += "}";
+
+htmlPage += "function fetchDiagnostics() {";
+htmlPage += "  fetch('/getDiagnostics')";
+htmlPage += "    .then(response => response.json())";
+htmlPage += "    .then(diag => {";
+htmlPage += "      lastDiagnostics = diag;";
+htmlPage += "      const badge = document.getElementById('diagBadge');";
+htmlPage += "      const c = classifyDiagnostics(diag);";
+htmlPage += "      badge.classList.remove('diagGood', 'diagBad', 'diagUnknown');";
+htmlPage += "      badge.classList.add(c.cls);";
+htmlPage += "      badge.innerText = c.text;";
+htmlPage += "      badge.title = (diag.resetReason || '') + ' | ' + (diag.resetInfo || '');";
+htmlPage += "    })";
+htmlPage += "    .catch(() => {";
+htmlPage += "      const badge = document.getElementById('diagBadge');";
+htmlPage += "      badge.classList.remove('diagGood', 'diagBad');";
+htmlPage += "      badge.classList.add('diagUnknown');";
+htmlPage += "      badge.innerText = 'Diagnostics: Unknown';";
+htmlPage += "      badge.title = 'Could not fetch /getDiagnostics';";
+htmlPage += "    });";
+htmlPage += "}";
+
+htmlPage += "function openDiagnosticsModal() {";
+htmlPage += "  const modal = document.getElementById('diagModal');";
+htmlPage += "  const text = document.getElementById('diagText');";
+htmlPage += "  if (lastDiagnostics) {";
+htmlPage += "    text.value = JSON.stringify(lastDiagnostics, null, 2);";
+htmlPage += "  } else {";
+htmlPage += "    text.value = 'No diagnostics fetched yet.';";
+htmlPage += "  }";
+htmlPage += "  modal.style.display = 'block';";
+htmlPage += "  text.focus();";
+htmlPage += "  text.select();";
+htmlPage += "}";
+
+htmlPage += "function closeDiagnosticsModal() {";
+htmlPage += "  document.getElementById('diagModal').style.display = 'none';";
+htmlPage += "}";
+
+htmlPage += "function copyDiagnostics() {";
+htmlPage += "  const text = document.getElementById('diagText');";
+htmlPage += "  text.focus();";
+htmlPage += "  text.select();";
+htmlPage += "  if (navigator.clipboard && window.isSecureContext) {";
+htmlPage += "    navigator.clipboard.writeText(text.value).then(() => showNotification('Diagnostics copied'));";
+htmlPage += "  } else {";
+htmlPage += "    document.execCommand('copy');";
+htmlPage += "    showNotification('Diagnostics copied');";
+htmlPage += "  }";
+htmlPage += "}";
   
   // Fetch the current time from the backend and update the display
   htmlPage += "function fetchCurrentDateTime() {";
@@ -424,8 +511,14 @@ htmlPage += "    })";
 htmlPage += "    .catch(error => showNotification('Stopwatch action failed: ' + error));";
 htmlPage += "}";
 
+htmlPage += "window.addEventListener('load', function() {";
+htmlPage += "  var clockTab = document.getElementById('clockTab');";
+htmlPage += "  if (clockTab) { clockTab.click(); }";
+htmlPage += "});";
+
 htmlPage += "setInterval(function() {";
 htmlPage += "  fetchCurrentDateTime();";
+htmlPage += "  fetchDiagnostics();";
 htmlPage += "  fetchColors();";
 htmlPage += "  fetchCurrentBrightness();";
 htmlPage += "  fetchBrightnessOffsets();";
@@ -433,6 +526,7 @@ htmlPage += "}, 5000);";  // Every 5 seconds, fetch updates only when not select
 
 htmlPage += "setInterval(fetchStopwatchStatus, 1000);";
 htmlPage += "fetchStopwatchStatus();";
+htmlPage += "fetchDiagnostics();";
 
 
   htmlPage += "</script>";
@@ -464,6 +558,7 @@ void initWebServer() {
   server.on("/setClockMode", []() { addGlobalCORSHeaders(); setClockMode(); });
   server.on("/setStopwatchMode", []() { addGlobalCORSHeaders(); setStopwatchMode(); });
   server.on("/setRainbowMode", []() { addGlobalCORSHeaders(); handleRainbowMode(); });
+  server.on("/setRainbowClockMode", []() { addGlobalCORSHeaders(); handleRainbowClockMode(); });
   server.on("/setLoveMode", []() { addGlobalCORSHeaders(); handleLoveMode(); });
   server.on("/setFoodMode", []() { addGlobalCORSHeaders(); handleFoodMode(); });
 
@@ -547,10 +642,31 @@ void handleGetCurrentMode() {
 }
 void handleGetDiagnostics() {
   JsonDocument doc;
-  doc["uptimeSeconds"] = millis() / 1000;
+  unsigned long uptimeSeconds = millis() / 1000;
+  time_t nowEpoch = timeClient.getEpochTime();
+  bool timeSynced = (nowEpoch > 1700000000);  // Basic guard against unsynced NTP time.
+
+  doc["uptimeSeconds"] = uptimeSeconds;
   doc["freeHeap"] = ESP.getFreeHeap();
+  doc["softwareVersion"] = softwareVersion;
   doc["resetReason"] = ESP.getResetReason();
   doc["resetInfo"] = ESP.getResetInfo();
+  doc["timeSynced"] = timeSynced;
+
+  if (timeSynced) {
+    doc["currentEpoch"] = nowEpoch;
+    if (nowEpoch > (time_t)uptimeSeconds) {
+      time_t estimatedResetEpoch = nowEpoch - (time_t)uptimeSeconds;
+      doc["estimatedResetEpoch"] = estimatedResetEpoch;
+
+      char ts[24];
+      tm* resetInfoTm = localtime(&estimatedResetEpoch);
+      if (resetInfoTm != nullptr) {
+        strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", resetInfoTm);
+        doc["estimatedResetLocalTime"] = ts;
+      }
+    }
+  }
 
   String response;
   serializeJson(doc, response);
@@ -589,6 +705,11 @@ void setStopwatchMode() {
 void handleRainbowMode() {
   currentMode = RAINBOW_MODE;
   server.send(200, "text/html", "Switched to Rainbow Mode");
+}
+
+void handleRainbowClockMode() {
+  currentMode = RAINBOW_CLOCK_MODE;
+  server.send(200, "text/html", "Switched to Rainbow Clock Mode");
 }
 
 void handleLoveMode() {

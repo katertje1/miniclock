@@ -186,6 +186,7 @@ void updateBrightness() {
 static ClockMode lastRenderedMode = CLOCK_MODE;
 static unsigned long rainbowLastUpdate = 0;
 static uint16_t rainbowHue = 0;
+static unsigned long rainbowClockLastUpdate = 0;
 static unsigned long foodLastUpdate = 0;
 static uint8_t foodStep = 0;
 static uint8_t foodCycles = 0;
@@ -213,6 +214,66 @@ void displayRainbowMode() {
         int pixelHue = rainbowHue + (i * 65536L / strip.numPixels());
         strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
     }
+    strip.show();
+}
+
+static uint32_t brightRainbowColor(uint16_t hue) {
+    uint32_t c = strip.gamma32(strip.ColorHSV(hue));
+    uint8_t r = (c >> 16) & 0xFF;
+    uint8_t g = (c >> 8) & 0xFF;
+    uint8_t b = c & 0xFF;
+    const uint8_t floor = 28;  // Avoid very dark perceived rainbow colors in clock mode
+    if (r < floor) r = floor;
+    if (g < floor) g = floor;
+    if (b < floor) b = floor;
+    return strip.Color(r, g, b);
+}
+
+static void displayDigitRainbow(int startIndex, int digit, uint16_t phaseHue) {
+    for (int i = 0; i < 7; i++) {
+        if (digitPatterns[digit][i]) {
+            // Moving rainbow wave over active clock segments.
+            uint16_t segmentHue = phaseHue + (uint16_t)((startIndex + i) * 3200);
+            strip.setPixelColor(startIndex + digitPins[i], brightRainbowColor(segmentHue));
+        } else {
+            strip.setPixelColor(startIndex + digitPins[i], 0);
+        }
+    }
+}
+
+void displayRainbowClockMode() {
+    unsigned long now = millis();
+    if (now - rainbowClockLastUpdate < 50) {
+        return;
+    }
+    rainbowClockLastUpdate = now;
+    rainbowHue += 384;
+
+    updateBrightness();
+
+    int hours = getHours();
+    int minutes = getMinutes();
+
+    strip.clear();
+
+    uint16_t h0 = rainbowHue;
+    uint16_t h1 = rainbowHue + 4000;
+    uint16_t h2 = rainbowHue + 8000;
+    uint16_t h3 = rainbowHue + 12000;
+    uint16_t hc = rainbowHue + 16000;
+
+    if (hours < 10) {
+        displayDigitRainbow(7, hours % 10, h1);
+    } else {
+        displayDigitRainbow(0, hours / 10, h0);
+        displayDigitRainbow(7, hours % 10, h1);
+    }
+
+    strip.setPixelColor(colonTopLED, brightRainbowColor(hc + (uint16_t)(colonTopLED * 3200)));
+    strip.setPixelColor(colonBottomLED, brightRainbowColor(hc + (uint16_t)(colonBottomLED * 3200)));
+
+    displayDigitRainbow(16, minutes / 10, h2);
+    displayDigitRainbow(23, minutes % 10, h3);
     strip.show();
 }
 
@@ -368,6 +429,7 @@ void updateModeDisplay() {
         lastRenderedMode = currentMode;
         rainbowHue = 0;
         rainbowLastUpdate = 0;
+        rainbowClockLastUpdate = 0;
         foodStep = 0;
         foodCycles = 0;
         foodLastUpdate = 0;
@@ -384,6 +446,8 @@ void updateModeDisplay() {
             rainbowHue += 256;
             displayRainbowMode();
         }
+    } else if (currentMode == RAINBOW_CLOCK_MODE) {
+        displayRainbowClockMode();
     } else if (currentMode == STOPWATCH_MODE) {
         renderStopwatch(now);
     } else if (currentMode == FOOD_MODE) {
