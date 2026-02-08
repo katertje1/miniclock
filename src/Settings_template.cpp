@@ -38,6 +38,6 @@ int nightTimeBrightnessOffset = currentConfig.nightTimeBrightnessOffset;
 ClockMode currentMode = ClockMode::CLOCK_MODE;    // Initialize with a valid ClockMode value
 unsigned long modeStartTime = 0;
 bool isDaytime = true;
-const char* softwareVersion = "0.210";
+const char* softwareVersion = SOFTWARE_VERSION;
 
 */
