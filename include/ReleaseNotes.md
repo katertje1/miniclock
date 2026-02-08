@@ -14,6 +14,8 @@ Version 0.212 - February 7, 2026
   - Added `Set Stopwatch Mode` as mode action.
   - Added stopwatch action buttons for selected clock/all clocks.
   - Stopwatch control section is shown only when one clock is selected and that clock is in `Stopwatch Mode`.
+  - Added diagnostics status cell per clock using `/getDiagnostics`.
+  - Diagnostics are color-coded: green for normal/system restart, red for crash-like reset info.
 - Upload helper (`tools/upload.py`) was simplified again for speed:
   - Removed heavy pre-upload hostname discovery checks.
   - Uses direct target from `ota_host` or `<clockname>.local`.

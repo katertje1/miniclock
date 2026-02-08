@@ -46,11 +46,14 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - The controller UI is served from `data/controller.html` at `/controller`.
    - After editing `data/controller.html`, upload the filesystem with: `pio run -t uploadfs` or `pio run -e nodemcuv2_ota -t uploadfs --upload-port <ip>`.
    - The controller uses `/getClockList` and `/getStatus`, and only shows reachable clocks.
-   - Hostnames are generated as `<clockName>.local` with lowercase and underscores.
+   - Hostnames are generated as `<clockName>.local` with lowercase names (hyphen/underscore-safe).
    - The current device is auto-selected in the dropdown when opening `/controller` on that device.
    - Use **Show Probe Targets** to inspect which hosts are being probed and whether they are reachable.
    - Controller supports stopwatch commands for selected clock(s): `Set Stopwatch Mode`, `Start`, `Stop`, `Reset`, `Add 1 minute`.
    - Stopwatch controls are only shown when one clock is selected and that clock reports `Stopwatch Mode`.
+   - Controller now shows a diagnostics status cell per clock (from `/getDiagnostics`):
+     - green for normal/system restart
+     - red for crash-like signals (exception/watchdog/fatal/etc.)
 
 7. **Diagnostics Endpoint**:
    - Use `/getDiagnostics` to inspect runtime and reset state without USB serial.
