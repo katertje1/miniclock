@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniClock</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+    h2, p { text-align: center; }
+    .tab button.active { background-color: #ccc; }
+    .tabcontent { display: none; padding: 6px 12px; border-top: none; }
+    button { width: 100%; max-width: 420px; padding: 12px; margin: 8px 0; font-size: 16px; cursor: pointer; }
+    input[type='color'] { width: 100%; max-width: 420px; margin: 4px 0; }
+    #diagBadge { display: inline-block; margin-top: 8px; padding: 8px 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .diagGood { background: #c8e6c9; color: #1b5e20; }
+    .diagBad { background: #ffcdd2; color: #b71c1c; }
+    .diagUnknown { background: #eceff1; color: #37474f; }
+    #notification {
+      visibility: hidden;
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%);
+      background: #333;
+      color: #fff;
+      padding: 12px;
+      border-radius: 6px;
+      z-index: 1000;
+    }
+    #notification.show { visibility: visible; }
+    #diagModal {
+      display: none;
+      position: fixed;
+      z-index: 1100;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.45);
+    }
+    #diagModalContent {
+      background: #fff;
+      margin: 8% auto;
+      padding: 14px;
+      border-radius: 8px;
+      width: 92%;
+      max-width: 760px;
+    }
+    #diagText {
+      width: 100%;
+      height: 220px;
+      font-family: monospace;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .diagBtnRow { text-align: right; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h2 id="deviceName">MiniClock</h2>
+  <p><small>Version: <span id="softwareVersion">-</span></small></p>
+  <p id="currentDateTime">-</p>
+  <p><span id="diagBadge" class="diagUnknown" onclick="openDiagnosticsModal()">Diagnostics: Unknown</span></p>
+
+  <div class='tab' style="text-align:center;">
+    <button class='tablinks' onclick='openTab(event, "Clock")' id='clockTab'>Clock</button>
+    <button class='tablinks' onclick='openTab(event, "Stopwatch")' id='stopwatchTab'>Stopwatch</button>
+    <button class='tablinks' onclick='openTab(event, "RainbowClock")' id='rainbowClockTab'>Rainbow Clock</button>
+    <button class='tablinks' onclick='openTab(event, "Love")' id='loveTab'>Love</button>
+    <button class='tablinks' onclick='openTab(event, "Rainbow")' id='rainbowTab'>Rainbow</button>
+    <button class='tablinks' onclick='openTab(event, "Food")' id='foodTab'>Food</button>
+  </div>
+
+  <hr />
+
+  <div id='Clock' class='tabcontent'>
+    <button type='button' class='modeButton' data-url='/setClockMode'>Activate Clock Mode</button>
+    <p>Hour Color: <input type='color' id='hourColor' value='#000000'></p>
+    <p>Colon Color: <input type='color' id='colonColor' value='#000000'></p>
+    <p>Minute Color: <input type='color' id='minuteColor' value='#000000'></p>
+    <button type='button' onclick='resetClockColors()'>Set Colors to Defaults</button>
+
+    <p>Current Brightness: <span id='currentBrightness'>-</span></p>
+    <p>Daytime Offset:
+      <input type='range' id='dayOffset' min='-255' max='255' value='0' oninput='updateDayOffsetValue()'>
+      <span id='dayOffsetValue'>0</span>
+    </p>
+    <p>Nighttime Offset:
+      <input type='range' id='nightOffset' min='-255' max='255' value='0' oninput='updateNightOffsetValue()'>
+      <span id='nightOffsetValue'>0</span>
+    </p>
+  </div>
+
+  <div id='Stopwatch' class='tabcontent'>
+    <button type='button' class='modeButton' data-url='/setStopwatchMode'>Activate Stopwatch Mode</button>
+    <button type='button' onclick='stopwatchAction("start")'>Start</button>
+    <button type='button' onclick='stopwatchAction("stop")'>Stop</button>
+    <button type='button' onclick='stopwatchAction("reset")'>Reset</button>
+    <button type='button' onclick='stopwatchAction("addMinute")'>Add 1 minute</button>
+    <p>Stopwatch: <span id='stopwatchDisplay'>00:00</span> <small id='stopwatchState'>(stopped)</small></p>
+  </div>
+
+  <div id='RainbowClock' class='tabcontent'>
+    <button type='button' class='modeButton' data-url='/setRainbowClockMode'>Activate Rainbow Clock Mode</button>
+  </div>
+
+  <div id='Love' class='tabcontent'>
+    <button type='button' class='modeButton' data-url='/setLoveMode'>Activate Love Mode</button>
+  </div>
+
+  <div id='Rainbow' class='tabcontent'>
+    <button type='button' class='modeButton' data-url='/setRainbowMode'>Activate Rainbow Mode</button>
+  </div>
+
+  <div id='Food' class='tabcontent'>
+    <button type='button' class='modeButton' data-url='/setFoodMode'>Activate Food Mode</button>
+  </div>
+
+  <div id='notification'></div>
+  <div id='diagModal'>
+    <div id='diagModalContent'>
+      <h3>Diagnostics</h3>
+      <textarea id='diagText' readonly></textarea>
+      <div class='diagBtnRow'>
+        <button type='button' onclick='copyDiagnostics()'>Copy</button>
+        <button type='button' onclick='closeDiagnosticsModal()'>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isSelectingColor = false;
+    let lastDiagnostics = null;
+
+    function showNotification(message) {
+      const notification = document.getElementById('notification');
+      notification.innerText = message;
+      notification.classList.add('show');
+      setTimeout(() => notification.classList.remove('show'), 4000);
+    }
+
+    function openTab(evt, tabName) {
+      const tabcontent = document.getElementsByClassName('tabcontent');
+      for (let i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = 'none';
+      }
+      const tablinks = document.getElementsByClassName('tablinks');
+      for (let i = 0; i < tablinks.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(' active', '');
+      }
+      document.getElementById(tabName).style.display = 'block';
+      evt.currentTarget.className += ' active';
+    }
+
+    function classifyDiagnostics(diag) {
+      if (!diag || !diag.resetReason) return { text: 'Diagnostics: Unknown', cls: 'diagUnknown' };
+      const reason = String(diag.resetReason || '');
+      const info = String(diag.resetInfo || '');
+      const combined = (reason + ' ' + info).toLowerCase();
+      const badSignals = ['exception', 'fatal', 'wdt', 'watchdog', 'abort', 'panic', 'crash'];
+      const isBad = badSignals.some(s => combined.includes(s));
+      if (isBad) return { text: 'Diagnostics: Crash', cls: 'diagBad' };
+      if (reason.indexOf('Software/System restart') >= 0) return { text: 'Diagnostics: Software/System restart', cls: 'diagGood' };
+      return { text: 'Diagnostics: OK', cls: 'diagGood' };
+    }
+
+    function openDiagnosticsModal() {
+      const modal = document.getElementById('diagModal');
+      const text = document.getElementById('diagText');
+      text.value = lastDiagnostics ? JSON.stringify(lastDiagnostics, null, 2) : 'No diagnostics fetched yet.';
+      modal.style.display = 'block';
+      text.focus();
+      text.select();
+    }
+
+    function closeDiagnosticsModal() {
+      document.getElementById('diagModal').style.display = 'none';
+    }
+
+    function copyDiagnostics() {
+      const text = document.getElementById('diagText');
+      text.focus();
+      text.select();
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text.value).then(() => showNotification('Diagnostics copied'));
+      } else {
+        document.execCommand('copy');
+        showNotification('Diagnostics copied');
+      }
+    }
+
+    function fetchDiagnostics() {
+      fetch('/getDiagnostics')
+        .then(response => response.json())
+        .then(diag => {
+          lastDiagnostics = diag;
+          const badge = document.getElementById('diagBadge');
+          const c = classifyDiagnostics(diag);
+          badge.classList.remove('diagGood', 'diagBad', 'diagUnknown');
+          badge.classList.add(c.cls);
+          badge.innerText = c.text;
+          badge.title = (diag.resetReason || '') + ' | ' + (diag.resetInfo || '');
+        })
+        .catch(() => {
+          const badge = document.getElementById('diagBadge');
+          badge.classList.remove('diagGood', 'diagBad');
+          badge.classList.add('diagUnknown');
+          badge.innerText = 'Diagnostics: Unknown';
+          badge.title = 'Could not fetch /getDiagnostics';
+        });
+    }
+
+    function fetchCurrentDateTime() {
+      fetch('/getCurrentDateTime')
+        .then(response => response.text())
+        .then(datetime => { document.getElementById('currentDateTime').innerText = datetime; })
+        .catch(() => {});
+    }
+
+    function fetchDeviceInfo() {
+      fetch('/getDeviceName').then(r => r.text()).then(v => document.getElementById('deviceName').innerText = v).catch(() => {});
+      fetch('/getSoftwareVersion').then(r => r.text()).then(v => document.getElementById('softwareVersion').innerText = v).catch(() => {});
+    }
+
+    function fetchCurrentBrightness() {
+      fetch('/getBrightness')
+        .then(response => response.json())
+        .then(data => { document.getElementById('currentBrightness').innerText = data.brightness; })
+        .catch(() => {});
+    }
+
+    function fetchBrightnessOffsets() {
+      fetch('/getBrightnessOffsets')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('dayOffset').value = data.dayOffset;
+          document.getElementById('dayOffsetValue').innerText = data.dayOffset;
+          document.getElementById('nightOffset').value = data.nightOffset;
+          document.getElementById('nightOffsetValue').innerText = data.nightOffset;
+        })
+        .catch(() => {});
+    }
+
+    function updateDayOffsetValue() {
+      document.getElementById('dayOffsetValue').innerText = document.getElementById('dayOffset').value;
+    }
+
+    function updateNightOffsetValue() {
+      document.getElementById('nightOffsetValue').innerText = document.getElementById('nightOffset').value;
+    }
+
+    function submitBrightnessOffsets() {
+      const data = {
+        dayOffset: parseInt(document.getElementById('dayOffset').value, 10),
+        nightOffset: parseInt(document.getElementById('nightOffset').value, 10)
+      };
+      fetch('/setBrightnessOffsets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).catch(() => {});
+    }
+
+    function cleanHexColor(color) {
+      const clean = String(color || '').trim().replace(/[^#0-9A-Fa-f]/g, '');
+      if (clean.startsWith('#') && clean.length === 7) return clean;
+      if (!clean.startsWith('#') && clean.length === 6) return '#' + clean;
+      return '#000000';
+    }
+
+    function fetchColors() {
+      if (isSelectingColor) return;
+      fetch('/getHourColor').then(r => r.text()).then(c => { document.getElementById('hourColor').value = cleanHexColor(c); }).catch(() => {});
+      fetch('/getMinuteColor').then(r => r.text()).then(c => { document.getElementById('minuteColor').value = cleanHexColor(c); }).catch(() => {});
+      fetch('/getColonColor').then(r => r.text()).then(c => { document.getElementById('colonColor').value = cleanHexColor(c); }).catch(() => {});
+    }
+
+    function updateHourColor() {
+      const color = document.getElementById('hourColor').value;
+      fetch('/setHourColor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'color=' + encodeURIComponent(color) }).catch(() => {});
+    }
+
+    function updateMinuteColor() {
+      const color = document.getElementById('minuteColor').value;
+      fetch('/setMinuteColor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'color=' + encodeURIComponent(color) }).catch(() => {});
+    }
+
+    function updateColonColor() {
+      const color = document.getElementById('colonColor').value;
+      fetch('/setColonColor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'color=' + encodeURIComponent(color) }).catch(() => {});
+    }
+
+    function resetClockColors() {
+      fetch('/resetColors', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('hourColor').value = cleanHexColor(data.defaultHourColor);
+          document.getElementById('minuteColor').value = cleanHexColor(data.defaultMinuteColor);
+          document.getElementById('colonColor').value = cleanHexColor(data.defaultColonColor);
+          showNotification('Colors reset to defaults');
+        })
+        .catch(() => {});
+    }
+
+    function formatStopwatch(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function fetchStopwatchStatus() {
+      fetch('/getStopwatchStatus')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('stopwatchDisplay').innerText = formatStopwatch(data.remainingSeconds || 0);
+          document.getElementById('stopwatchState').innerText = data.running ? '(running)' : '(stopped)';
+        })
+        .catch(() => {});
+    }
+
+    function stopwatchAction(action) {
+      const map = { start: '/startStopwatch', stop: '/stopStopwatch', reset: '/resetStopwatch', addMinute: '/addStopwatchMinute' };
+      const url = map[action];
+      if (!url) return;
+      fetch(url, { method: 'POST' })
+        .then(() => fetchStopwatchStatus())
+        .catch(() => {});
+    }
+
+    function initModeButtons() {
+      document.querySelectorAll('.modeButton').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const url = btn.getAttribute('data-url');
+          fetch(url)
+            .then(response => {
+              if (response.ok) showNotification('Mode activated successfully');
+              else showNotification('Failed to activate mode');
+            })
+            .catch(() => showNotification('Failed to activate mode'));
+        });
+      });
+    }
+
+    document.getElementById('dayOffset').addEventListener('change', submitBrightnessOffsets);
+    document.getElementById('nightOffset').addEventListener('change', submitBrightnessOffsets);
+
+    document.getElementById('hourColor').addEventListener('input', function () { isSelectingColor = true; updateHourColor(); });
+    document.getElementById('minuteColor').addEventListener('input', function () { isSelectingColor = true; updateMinuteColor(); });
+    document.getElementById('colonColor').addEventListener('input', function () { isSelectingColor = true; updateColonColor(); });
+    document.getElementById('hourColor').addEventListener('change', function () { isSelectingColor = false; setTimeout(fetchColors, 1000); });
+    document.getElementById('minuteColor').addEventListener('change', function () { isSelectingColor = false; setTimeout(fetchColors, 1000); });
+    document.getElementById('colonColor').addEventListener('change', function () { isSelectingColor = false; setTimeout(fetchColors, 1000); });
+
+    window.addEventListener('click', function (event) {
+      const modal = document.getElementById('diagModal');
+      if (event.target === modal) closeDiagnosticsModal();
+    });
+
+    window.addEventListener('load', function () {
+      initModeButtons();
+      const clockTab = document.getElementById('clockTab');
+      if (clockTab) clockTab.click();
+      fetchDeviceInfo();
+      fetchCurrentDateTime();
+      fetchDiagnostics();
+      fetchColors();
+      fetchCurrentBrightness();
+      fetchBrightnessOffsets();
+      fetchStopwatchStatus();
+    });
+
+    setInterval(function () {
+      fetchCurrentDateTime();
+      fetchDiagnostics();
+      fetchColors();
+      fetchCurrentBrightness();
+      fetchBrightnessOffsets();
+    }, 5000);
+
+    setInterval(fetchStopwatchStatus, 1000);
+  </script>
+</body>
+</html>

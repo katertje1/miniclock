@@ -65,7 +65,31 @@ void handleGetClockList() {
 void handleRoot() {
   addGlobalCORSHeaders();  // Add CORS headers to all responses
 
-  String htmlPage = "<html><head>";
+  // Serve root page from LittleFS to avoid building a very large String on heap.
+  if (!fsReady) {
+    fsReady = LittleFS.begin();
+  }
+  if (!fsReady) {
+    server.send(500, "text/plain", "Filesystem not available");
+    return;
+  }
+  if (!LittleFS.exists("/index.html")) {
+    server.send(404, "text/plain", "index.html not found");
+    return;
+  }
+  File rootFile = LittleFS.open("/index.html", "r");
+  if (!rootFile) {
+    server.send(500, "text/plain", "Failed to open index.html");
+    return;
+  }
+  server.streamFile(rootFile, "text/html");
+  rootFile.close();
+  return;
+
+  String htmlPage;
+  // Reserve once to reduce heap fragmentation from many concatenations below.
+  htmlPage.reserve(16384);
+  htmlPage = "<html><head>";
   htmlPage += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";  // Add viewport meta tag for mobile responsiveness
   htmlPage += "<script src='https://code.jquery.com/jquery-3.7.1.min.js'></script><style>";
   htmlPage += "body { font-family: Arial; margin: 0; padding: 10px; }";

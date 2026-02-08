@@ -1,5 +1,15 @@
 # Release Notes
 /*
+Version 0.214 - February 8, 2026
+- Stability / memory:
+  - Root page (`/`) is now served from LittleFS (`data/index.html`) instead of building a large in-memory HTML string.
+  - Reduced dynamic `String` usage in `main.cpp` debug/day-change logic to lower heap fragmentation pressure.
+- Web assets:
+  - Added `data/index.html` as the primary device UI page.
+  - Filesystem upload is now required after changing `data/index.html` or `data/controller.html`.
+- Diagnostics:
+  - Keeps diagnostics badge/popup behavior on `/` and controller red-cell popup behavior.
+
 Version 0.213 - February 8, 2026
 - Diagnostics improvements on both web pages:
   - Device page (`/`) now shows a diagnostics badge (green/red/unknown).

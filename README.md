@@ -34,6 +34,8 @@ tools/upload.py
 
 - Device web UI: `http://<device>.local/`
 - Controller page: `http://<device>.local/controller`
+- Both pages are served from LittleFS files in `data/` (`index.html`, `controller.html`).
+- After changing `data/` files, upload filesystem (`uploadfs`).
 
 Diagnostics:
 - `/` shows a diagnostics status badge (green/red/unknown), click for full JSON.

@@ -2,6 +2,7 @@
 #include <ArduinoOTA.h>
 #include <NTPClient.h>
 #include <TimeLib.h>
+#include <string.h>
 #include "Settings.h"
 #include "ClockDisplay.h"
 #include "WebServer.h"
@@ -13,7 +14,7 @@ void connectToWiFi();
 unsigned long debugPreviousMillis = 0;
 const long debugInterval = 10000;  // Interval for debug messages
 
-String lastSunriseSunsetCalcDate = "";
+char lastSunriseSunsetCalcDate[11] = "";
 
 unsigned long lastDSTCheck = 0;
 const unsigned long DST_UPDATE_INTERVAL = 3600000;  // 1 hour
@@ -107,10 +108,9 @@ void loop() {
 
   char currentDate[11];  // "YYYY-MM-DD"
   strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", nowInfo);
-  String today = String(currentDate);
 
   // Only recalculate if the sunrise/sunset hasn't already been calculated for today
-  if (today != lastSunriseSunsetCalcDate) {
+  if (strcmp(currentDate, lastSunriseSunsetCalcDate) != 0) {
     Serial.println("Day has changed. Recalculating sunrise and sunset times...");
     int year = nowInfo->tm_year + 1900;
     int month = nowInfo->tm_mon + 1;
@@ -118,7 +118,8 @@ void loop() {
 
     calculateSunriseSunset(true, year, month, day);
     calculateSunriseSunset(false, year, month, day);
-    lastSunriseSunsetCalcDate = today;
+    strncpy(lastSunriseSunsetCalcDate, currentDate, sizeof(lastSunriseSunsetCalcDate) - 1);
+    lastSunriseSunsetCalcDate[sizeof(lastSunriseSunsetCalcDate) - 1] = '\0';
   }
 
   unsigned long currentMillis = millis();
@@ -129,8 +130,10 @@ void loop() {
     Serial.print("Free heap:           ");
     Serial.println(ESP.getFreeHeap());
 
-    Serial.println("Device :              " + String(currentConfig.deviceName));
-    Serial.println("IP :                  " + WiFi.localIP().toString());
+    Serial.print("Device :              ");
+    Serial.println(currentConfig.deviceName);
+    Serial.print("IP :                  ");
+    Serial.println(WiFi.localIP());
 
     char formattedTime[20];
     strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", nowInfo);

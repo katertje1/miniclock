@@ -43,8 +43,9 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
    - The helper can upload firmware, filesystem, or both (useful for `/controller`).
 
 6. **Controller Page**:
+   - The device root UI (`/`) is served from `data/index.html` (LittleFS).
    - The controller UI is served from `data/controller.html` at `/controller`.
-   - After editing `data/controller.html`, upload the filesystem with: `pio run -t uploadfs` or `pio run -e nodemcuv2_ota -t uploadfs --upload-port <ip>`.
+   - After editing files in `data/` (including `index.html` and `controller.html`), upload the filesystem with: `pio run -t uploadfs` or `pio run -e nodemcuv2_ota -t uploadfs --upload-port <ip>`.
    - The controller uses `/getClockList` and `/getStatus`, and only shows reachable clocks.
    - Hostnames are generated as `<clockName>.local` with lowercase names (hyphen/underscore-safe).
    - The current device is auto-selected in the dropdown when opening `/controller` on that device.
