@@ -31,19 +31,29 @@ const uint8_t digitPatterns[10][7] = {
       { 0, 1, 1, 1, 1, 1, 1 }   // 9
     };
 
-#include <map>
+// Keep letter patterns in static storage to avoid dynamic allocation/pointer lifetime issues.
+static const uint8_t LETTER_D[7] = {1, 1, 0, 1, 1, 1, 0};
+static const uint8_t LETTER_E[7] = {1, 1, 1, 0, 1, 0, 1};
+static const uint8_t LETTER_F[7] = {1, 1, 1, 0, 1, 0, 0};
+static const uint8_t LETTER_L[7] = {1, 1, 0, 0, 0, 0, 1};
+static const uint8_t LETTER_O[7] = {1, 1, 1, 1, 0, 1, 1};
+static const uint8_t LETTER_V[7] = {1, 1, 0, 1, 0, 1, 1};
+static const uint8_t LETTER_d[7] = {1, 0, 0, 1, 1, 1, 1};
+static const uint8_t LETTER_o[7] = {1, 0, 0, 0, 1, 1, 1};
 
-// Define the letter patterns using a map
-std::map<char, const uint8_t*> letterPatternsMap = {
-    {'D', (const uint8_t[7]){1, 1, 0, 1, 1, 1, 0}},  // D
-    {'E', (const uint8_t[7]){1, 1, 1, 0, 1, 0, 1}},  // E
-    {'F', (const uint8_t[7]){1, 1, 1, 0, 1, 0, 0}},  // F
-    {'L', (const uint8_t[7]){1, 1, 0, 0, 0, 0, 1}},  // L
-    {'O', (const uint8_t[7]){1, 1, 1, 1, 0, 1, 1}},  // O
-    {'V', (const uint8_t[7]){1, 1, 0, 1, 0, 1, 1}},  // V
-    {'d', (const uint8_t[7]){1, 0, 0, 1, 1, 1, 1}},  // d
-    {'o', (const uint8_t[7]){1, 0, 0, 0, 1, 1, 1}}   // o
-};
+static const uint8_t* getLetterPattern(char letter) {
+    switch (letter) {
+        case 'D': return LETTER_D;
+        case 'E': return LETTER_E;
+        case 'F': return LETTER_F;
+        case 'L': return LETTER_L;
+        case 'O': return LETTER_O;
+        case 'V': return LETTER_V;
+        case 'd': return LETTER_d;
+        case 'o': return LETTER_o;
+        default: return nullptr;
+    }
+}
 
 // Define the pins for the digits and colon
 const int digitPins[7] = {0, 1, 2, 3, 4, 5, 6};  // Adjust these according to your wiring
@@ -122,20 +132,19 @@ void displayColon() {
 }
 
 void displayLetter(int startIndex, char letter, uint32_t color) {
-    if (letterPatternsMap.find(letter) != letterPatternsMap.end()) {
-        const uint8_t* pattern = letterPatternsMap[letter];
-        for (int i = 0; i < 7; i++) {
-            if (pattern[i]) {
-                strip.setPixelColor(startIndex + i, color);
-            } else {
-                strip.setPixelColor(startIndex + i, 0);  // Turn off the LED
-            }
-        }
-        strip.show();
-    } else {
-        // Handle case where letter is not found in the map
+    const uint8_t* pattern = getLetterPattern(letter);
+    if (!pattern) {
         Serial.println("Letter not found in pattern map");
+        return;
     }
+    for (int i = 0; i < 7; i++) {
+        if (pattern[i]) {
+            strip.setPixelColor(startIndex + i, color);
+        } else {
+            strip.setPixelColor(startIndex + i, 0);  // Turn off the LED
+        }
+    }
+    strip.show();
 }
 
 uint32_t Wheel(byte WheelPos) {
