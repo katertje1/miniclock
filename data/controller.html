@@ -251,22 +251,104 @@
     let probeStates = [];
     let statusByHost = {};
     let selectedDiagnostics = null;
+    let reprobeTimer = null;
+    let reprobeBusy = false;
+    let tableRefreshTimer = null;
+    let lastFetchErrorAt = {};
+    let hostIpCache = {};
+    const HOST_IP_CACHE_KEY = "miniclockHostIpCacheV1";
 
     function displayName(name) {
       return name.replace(/[_-]/g, ' ');
     }
 
-    function toMdnsHost(name) {
-      // Keep display names separate; match current device hostnames (with underscores).
-      const safe = name
+    function unique(arr) {
+      return [...new Set(arr)];
+    }
+
+    function normalizeNameKey(name) {
+      return String(name || '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+    }
+
+    function isIPv4(value) {
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(value || '').trim());
+    }
+
+    function loadHostIpCache() {
+      try {
+        const raw = localStorage.getItem(HOST_IP_CACHE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          Object.keys(parsed).forEach(k => {
+            if (isIPv4(parsed[k])) {
+              hostIpCache[k] = parsed[k];
+            }
+          });
+        }
+      } catch (_) {
+        // Ignore cache parsing errors.
+      }
+    }
+
+    function saveHostIpCache() {
+      try {
+        localStorage.setItem(HOST_IP_CACHE_KEY, JSON.stringify(hostIpCache));
+      } catch (_) {
+        // Ignore storage errors.
+      }
+    }
+
+    function mdnsCandidates(name) {
+      const raw = String(name || '').trim().replace(/\.local$/i, '');
+      const normalized = raw
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+      const underscore = normalized
         .replace(/[^a-zA-Z0-9_-]+/g, '_')
         .replace(/_+/g, '_')
+        .replace(/^[-_]|[-_]$/g, '');
+
+      const hyphen = normalized
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
         .replace(/-+/g, '-')
-        .replace(/^[-_]|[-_]$/g, '')
-        .toLowerCase();
-      return `${safe}.local`;
+        .replace(/^[-_]|[-_]$/g, '');
+
+      const variants = unique([
+        raw,
+        raw.toLowerCase(),
+        underscore,
+        underscore.toLowerCase(),
+        hyphen,
+        hyphen.toLowerCase()
+      ].filter(Boolean));
+
+      return variants.map(v => `${v}.local`.toLowerCase());
+    }
+
+    async function resolveHostForName(name) {
+      const candidates = mdnsCandidates(name);
+      const nameKey = normalizeNameKey(name);
+      const cachedIp = hostIpCache[nameKey];
+      const probeCandidates = unique([cachedIp, ...candidates].filter(Boolean));
+      for (const host of probeCandidates) {
+        // Try all variants (legacy/new naming); first reachable one wins.
+        // eslint-disable-next-line no-await-in-loop
+        const ok = await probeHost(host);
+        if (ok) {
+          if (isIPv4(host)) {
+            hostIpCache[nameKey] = host;
+            saveHostIpCache();
+          }
+          return { name, host: host.toLowerCase(), reachable: true, candidates: probeCandidates };
+        }
+      }
+      return { name, host: (probeCandidates[0] || '').toLowerCase(), reachable: false, candidates: probeCandidates };
     }
 
     function buildSelect(reachableHosts, reachableNames) {
@@ -369,22 +451,53 @@
       section.style.display = mode === 'Stopwatch Mode' ? 'block' : 'none';
     }
 
-    function fetchClockData(host) {
-      const statusReq = fetch(`http://${host}/getStatus`).then(response => response.json());
-      const diagReq = fetch(`http://${host}/getDiagnostics`)
-        .then(response => response.json())
-        .catch(() => null);
-
-      return Promise.all([statusReq, diagReq])
-        .then(([statusData, diagnostics]) => {
-          if (!statusData) return null;
-          statusData.diagnostics = diagnostics;
-          return statusData;
+    function fetchJsonWithTimeout(url, ms) {
+      const t = withTimeout(ms);
+      return fetch(url, { signal: t.signal })
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
         })
-        .catch(error => {
-          console.error(`Error fetching data from ${host}:`, error);
-          return null;
-        });
+        .finally(() => t.cancel());
+    }
+
+    function logFetchErrorThrottled(host, error) {
+      const now = Date.now();
+      const prev = lastFetchErrorAt[host] || 0;
+      if (now - prev > 60000) {
+        lastFetchErrorAt[host] = now;
+        console.warn(`Clock unreachable (${host}):`, error);
+      }
+    }
+
+    async function fetchClockData(host, clockName) {
+      const nameKey = normalizeNameKey(clockName);
+      const cachedIp = hostIpCache[nameKey];
+      const candidates = unique([cachedIp, host, ...mdnsCandidates(clockName)].filter(Boolean));
+      for (const candidate of candidates) {
+        try {
+          // Try status first; if this fails, go to next candidate.
+          // eslint-disable-next-line no-await-in-loop
+          const statusData = await fetchJsonWithTimeout(`http://${candidate}/getStatus`, 2500);
+          // Summary only for periodic polling; full diagnostics fetched on demand.
+          // eslint-disable-next-line no-await-in-loop
+          const diagnosticsSummary = await fetchJsonWithTimeout(`http://${candidate}/getDiagnosticsSummary`, 2000).catch(() => null);
+          statusData.diagnosticsSummary = diagnosticsSummary;
+          statusData._resolvedHost = candidate;
+          if (diagnosticsSummary && isIPv4(diagnosticsSummary.ip)) {
+            hostIpCache[nameKey] = diagnosticsSummary.ip;
+            saveHostIpCache();
+          } else if (isIPv4(candidate)) {
+            hostIpCache[nameKey] = candidate;
+            saveHostIpCache();
+          }
+          return statusData;
+        } catch (error) {
+          // Try next candidate
+        }
+      }
+      logFetchErrorThrottled(host, "all host variants failed");
+      return null;
     }
 
     function classifyDiagnostics(diag) {
@@ -405,13 +518,23 @@
       return { text: "OK", cls: "diag-good", title: `${reason} | ${info}`, isBad: false };
     }
 
-    function openDiagnosticsModal(clockName, host, diag) {
-      selectedDiagnostics = diag || null;
+    function openDiagnosticsModal(clockName, host, diagSummary) {
+      selectedDiagnostics = diagSummary || null;
       document.getElementById('diagTitle').innerText = `Diagnostics: ${displayName(clockName)} (${host})`;
       document.getElementById('diagText').value = selectedDiagnostics
         ? JSON.stringify(selectedDiagnostics, null, 2)
         : 'No diagnostics data';
       document.getElementById('diagModal').style.display = 'block';
+
+      // Load full diagnostics only when requested by user interaction.
+      fetchJsonWithTimeout(`http://${host}/getDiagnostics`, 3000)
+        .then(full => {
+          selectedDiagnostics = full;
+          document.getElementById('diagText').value = JSON.stringify(full, null, 2);
+        })
+        .catch(() => {
+          // Keep summary view if full diagnostics fetch fails.
+        });
     }
 
     function closeDiagnosticsModal() {
@@ -431,16 +554,26 @@
 
     function updateTable(reachableHosts) {
       reachableHosts.forEach((host, index) => {
-        fetchClockData(host).then(data => {
+        const clockName = clockNames[index] || host;
+        fetchClockData(host, clockName).then(data => {
           if (data) {
+            const resolvedHost = data._resolvedHost || host;
+            const existingDiag = statusByHost[host] ? statusByHost[host].diagnosticsSummary : null;
+            if (!data.diagnosticsSummary) {
+              data.diagnosticsSummary = existingDiag;
+            }
             statusByHost[host] = data;
             document.getElementById(`deviceName-${index}`).innerText = data.deviceName;
+            const link = document.getElementById(`deviceName-${index}`);
+            if (link) {
+              link.href = `http://${resolvedHost}`;
+            }
             document.getElementById(`softwareVersion-${index}`).innerText = data.softwareVersion;
             document.getElementById(`currentTime-${index}`).innerText = data.currentTime;
             document.getElementById(`sunriseTime-${index}`).innerText = data.sunriseTime;
             document.getElementById(`sunsetTime-${index}`).innerText = data.sunsetTime;
             const diagElem = document.getElementById(`diagnostics-${index}`);
-            const diag = classifyDiagnostics(data.diagnostics);
+            const diag = classifyDiagnostics(data.diagnosticsSummary);
             diagElem.innerText = diag.text;
             diagElem.classList.remove("diag-good", "diag-bad", "diag-unknown");
             diagElem.classList.add(diag.cls);
@@ -451,7 +584,7 @@
               diagElem.classList.add("diag-clickable");
               diagElem.title = `${diag.title} (click for details)`;
               const clockName = data.deviceName || clockNames[index] || host;
-              diagElem.onclick = () => openDiagnosticsModal(clockName, host, data.diagnostics);
+              diagElem.onclick = () => openDiagnosticsModal(clockName, resolvedHost, data.diagnosticsSummary);
             }
             document.getElementById(`currentMode-${index}`).innerText = data.currentMode;
             document.getElementById(`currentBrightness-${index}`).innerText = data.currentBrightness;
@@ -471,15 +604,39 @@
             if (selectedTarget === host) {
               refreshStopwatchVisibility();
             }
+          } else {
+            // Mark host as temporarily offline instead of spamming console/CORS noise.
+            const fields = [
+              "softwareVersion",
+              "currentTime",
+              "sunriseTime",
+              "sunsetTime",
+              "currentMode",
+              "currentBrightness"
+            ];
+            fields.forEach(field => {
+              const el = document.getElementById(`${field}-${index}`);
+              if (el) el.innerText = "offline";
+            });
+            const diagElem = document.getElementById(`diagnostics-${index}`);
+            if (diagElem) {
+              diagElem.innerText = "Offline";
+              diagElem.classList.remove("diag-good", "diag-bad");
+              diagElem.classList.add("diag-unknown");
+              diagElem.classList.remove("diag-clickable");
+              diagElem.onclick = null;
+              diagElem.title = "Host currently unreachable";
+            }
           }
         });
       });
     }
 
-    function updateDebugTablePeriodically() {
-      setInterval(() => {
-        updateTable(clockHosts);  // Call the function to update the table every 10 seconds
-      }, 10000);  // Every 10 seconds
+    function startTableRefresh() {
+      if (tableRefreshTimer) return;
+      tableRefreshTimer = setInterval(() => {
+        updateTable(clockHosts);
+      }, 30000);
     }
 
     function withTimeout(ms) {
@@ -503,25 +660,36 @@
         .then(response => response.json())
         .then(names => {
           const configuredNames = names.slice();
-          const configuredHosts = names.map(n => toMdnsHost(n));
           const selfHost = (window.location.hostname || '').toLowerCase();
+          const selfDeviceNamePromise = fetch('/getDeviceName')
+            .then(r => (r.ok ? r.text() : ''))
+            .catch(() => '');
 
-          Promise.all(configuredHosts.map(probeHost)).then(results => {
+          Promise.all([Promise.all(configuredNames.map(resolveHostForName)), selfDeviceNamePromise]).then(([results, selfDeviceName]) => {
             const reachableNames = [];
             const reachableHosts = [];
+            const seenHosts = new Set();
             probeStates = [];
-            results.forEach((ok, idx) => {
-              probeStates.push({ name: configuredNames[idx], host: configuredHosts[idx], reachable: ok });
-              if (ok) {
-                reachableNames.push(configuredNames[idx]);
-                reachableHosts.push(configuredHosts[idx]);
+            results.forEach((result, idx) => {
+              const resultHost = (result.host || '').toLowerCase();
+              probeStates.push({ name: result.name, host: resultHost, reachable: result.reachable, tried: result.candidates });
+              if (result.reachable && resultHost && !seenHosts.has(resultHost)) {
+                seenHosts.add(resultHost);
+                reachableNames.push(result.name);
+                reachableHosts.push(resultHost);
               }
             });
 
-            // Always include the current host as reachable: page is already loaded from it.
-            if (selfHost && !reachableHosts.includes(selfHost)) {
-              const selfIdx = configuredHosts.indexOf(selfHost);
-              const selfName = selfIdx >= 0 ? configuredNames[selfIdx] : 'Current_Clock';
+            // If page is opened by IP, avoid adding duplicate "self" when that same clock is already reachable by mDNS name.
+            const selfNameNorm = String(selfDeviceName || '').trim().toLowerCase();
+            const selfNameAlreadyListed = selfNameNorm
+              ? reachableNames.some(n => String(n || '').trim().toLowerCase() === selfNameNorm)
+              : false;
+
+            // Always include current host as reachable only when the same device isn't already in list by name.
+            if (selfHost && !reachableHosts.includes(selfHost) && !selfNameAlreadyListed) {
+              const selfIdx = results.findIndex(r => (r.host || '').toLowerCase() === selfHost);
+              const selfName = selfIdx >= 0 ? configuredNames[selfIdx] : (selfDeviceName || 'Current_Clock');
               probeStates.unshift({ name: selfName, host: selfHost, reachable: true });
               reachableNames.unshift(selfName);
               reachableHosts.unshift(selfHost);
@@ -540,10 +708,10 @@
               btn.disabled = noClocks;
             });
             buildSelect(clockHosts, clockNames);
-            document.getElementById('targetClock').addEventListener('change', refreshStopwatchVisibility);
+            document.getElementById('targetClock').onchange = refreshStopwatchVisibility;
             buildTable(clockHosts, clockNames);
             updateTable(clockHosts);
-            updateDebugTablePeriodically();
+            startTableRefresh();
             refreshStopwatchVisibility();
           });
         })
@@ -559,7 +727,11 @@
           text.textContent = 'No probe data yet.';
         } else {
           text.textContent = probeStates
-            .map(p => `${p.reachable ? '[OK] ' : '[--] '} ${p.name} -> ${p.host}`)
+            .map(p => {
+              if (p.reachable) return `${p.reachable ? '[OK] ' : '[--] '} ${p.name} -> ${p.host}`;
+              const tried = (p.tried && p.tried.length) ? ` (tried: ${p.tried.join(', ')})` : '';
+              return `${p.reachable ? '[OK] ' : '[--] '} ${p.name} -> ${p.host}${tried}`;
+            })
             .join('\n');
         }
         panel.style.display = 'block';
@@ -568,8 +740,22 @@
       }
     }
 
+    function startAutoReprobe() {
+      if (reprobeTimer) return;
+      reprobeTimer = setInterval(() => {
+        if (reprobeBusy) return;
+        reprobeBusy = true;
+        loadClockList();
+        setTimeout(() => {
+          reprobeBusy = false;
+        }, 3000);
+      }, 60000);
+    }
+
     window.onload = function () {
+      loadHostIpCache();
       loadClockList();
+      startAutoReprobe();
       const modal = document.getElementById('diagModal');
       window.addEventListener('click', function (event) {
         if (event.target === modal) {

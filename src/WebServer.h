@@ -15,6 +15,7 @@ void handleGetDeviceName();
 void handleGetSoftwareVersion();
 void handleGetCurrentMode();
 void handleGetDiagnostics();
+void handleGetDiagnosticsSummary();
 void handleGetStatus();
 void handleGetSunrise();
 void handleGetSunset();

@@ -131,6 +131,7 @@
   <script>
     let isSelectingColor = false;
     let lastDiagnostics = null;
+    let currentModeLabel = '';
 
     function showNotification(message) {
       const notification = document.getElementById('notification');
@@ -171,6 +172,15 @@
       modal.style.display = 'block';
       text.focus();
       text.select();
+
+      // Fetch full diagnostics only on-demand.
+      fetch('/getDiagnostics')
+        .then(response => response.json())
+        .then(diag => {
+          lastDiagnostics = diag;
+          text.value = JSON.stringify(diag, null, 2);
+        })
+        .catch(() => {});
     }
 
     function closeDiagnosticsModal() {
@@ -189,8 +199,8 @@
       }
     }
 
-    function fetchDiagnostics() {
-      fetch('/getDiagnostics')
+    function fetchDiagnosticsSummary() {
+      fetch('/getDiagnosticsSummary')
         .then(response => response.json())
         .then(diag => {
           lastDiagnostics = diag;
@@ -206,7 +216,7 @@
           badge.classList.remove('diagGood', 'diagBad');
           badge.classList.add('diagUnknown');
           badge.innerText = 'Diagnostics: Unknown';
-          badge.title = 'Could not fetch /getDiagnostics';
+          badge.title = 'Could not fetch /getDiagnosticsSummary';
         });
     }
 
@@ -220,6 +230,21 @@
     function fetchDeviceInfo() {
       fetch('/getDeviceName').then(r => r.text()).then(v => document.getElementById('deviceName').innerText = v).catch(() => {});
       fetch('/getSoftwareVersion').then(r => r.text()).then(v => document.getElementById('softwareVersion').innerText = v).catch(() => {});
+    }
+
+    function fetchStatusSnapshot() {
+      fetch('/getStatus')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('currentDateTime').innerText = data.currentTime || '-';
+          document.getElementById('currentBrightness').innerText = data.currentBrightness ?? '-';
+          currentModeLabel = data.currentMode || '';
+          if (!isSelectingColor) {
+            document.getElementById('hourColor').value = cleanHexColor(data.hourColor);
+            document.getElementById('minuteColor').value = cleanHexColor(data.minuteColor);
+          }
+        })
+        .catch(() => {});
     }
 
     function fetchCurrentBrightness() {
@@ -361,23 +386,26 @@
       const clockTab = document.getElementById('clockTab');
       if (clockTab) clockTab.click();
       fetchDeviceInfo();
-      fetchCurrentDateTime();
-      fetchDiagnostics();
-      fetchColors();
-      fetchCurrentBrightness();
+      fetchStatusSnapshot();
+      fetchDiagnosticsSummary();
       fetchBrightnessOffsets();
       fetchStopwatchStatus();
     });
 
     setInterval(function () {
-      fetchCurrentDateTime();
-      fetchDiagnostics();
-      fetchColors();
-      fetchCurrentBrightness();
-      fetchBrightnessOffsets();
-    }, 5000);
+      fetchStatusSnapshot();
+    }, 15000);
 
-    setInterval(fetchStopwatchStatus, 1000);
+    setInterval(function () {
+      fetchDiagnosticsSummary();
+      fetchBrightnessOffsets();
+    }, 60000);
+
+    setInterval(function () {
+      if (currentModeLabel === 'Stopwatch Mode') {
+        fetchStopwatchStatus();
+      }
+    }, 2000);
   </script>
 </body>
 </html>

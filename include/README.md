@@ -59,13 +59,15 @@ This project is a Wi-Fi-connected clock that uses an **ESP8266** microcontroller
 
 7. **Diagnostics Endpoint**:
    - Use `/getDiagnostics` to inspect runtime and reset state without USB serial.
+   - Use `/getDiagnosticsSummary` for lightweight periodic checks (intended for UI polling).
    - Response includes software version and (when time is synced) an estimated reset timestamp.
    - Example: `curl http://<deviceName>.local/getDiagnostics`
 
 8. **Device Page Diagnostics**:
    - The root page (`/`) shows a diagnostics badge.
    - Badge is color-coded (green/red/unknown).
-   - Click badge to open popup with full diagnostics JSON and copy button.
+   - The page polls lightweight diagnostics summary by default.
+   - Click badge to open popup and fetch full diagnostics JSON on demand.
 
 ### Usage
 

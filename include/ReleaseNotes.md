@@ -1,5 +1,23 @@
 # Release Notes
 /*
+Version 0.215 - February 9, 2026
+- Stability / crash hardening:
+  - Reduced heap/stack pressure in web handlers by replacing multiple dynamic JSON/String responses with fixed-size `snprintf` buffers.
+  - Added `minFreeHeapSinceBoot` tracking in diagnostics for easier long-run health checks.
+  - Replaced `strftime` usage in main runtime paths with lightweight format helpers.
+  - Cached reset reason/info in diagnostics path to avoid repeated heavy calls.
+- Diagnostics and API:
+  - Added lightweight endpoint `/getDiagnosticsSummary` for periodic UI polling.
+  - `/getDiagnostics` remains available for full detailed payload (on-demand).
+- Web UI polling changes:
+  - Device page (`/`) now uses lighter polling:
+    - status snapshot less frequent
+    - diagnostics via summary endpoint
+    - full diagnostics fetched only when clicking the diagnostics badge
+  - Controller now polls less aggressively and uses diagnostics summary by default.
+- Validation:
+  - Long-running tests with `/` + controller load showed stable runtime without new exception resets.
+
 Version 0.214 - February 8, 2026
 - Stability / memory:
   - Root page (`/`) is now served from LittleFS (`data/index.html`) instead of building a large in-memory HTML string.

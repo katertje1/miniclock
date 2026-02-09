@@ -43,7 +43,6 @@ extern const char* ntpServerName;                   //time server the program us
 //time
 extern WiFiUDP ntpUDP;                              //connection for time server
 extern NTPClient timeClient;                        //keeper of time
-extern const char* ntpServerName;                   //url of the timeserver
 
 //default clock colors
 extern uint32_t DEFAULT_HOUR_COLOR;
@@ -66,6 +65,7 @@ extern bool isDaytime;                              //is it currently day? (or n
 extern unsigned long modeStartTime;
 extern uint8_t currentBrightness;                   //current Brightness value
 extern const char* softwareVersion;                 //software version this clock is running
+extern uint32_t minFreeHeapSinceBoot;               //lowest observed free heap since boot
 
 extern uint32_t hourColor;
 extern uint32_t minuteColor;

@@ -39,6 +39,7 @@ tools/upload.py
 
 Diagnostics:
 - `/` shows a diagnostics status badge (green/red/unknown), click for full JSON.
+- `/` uses lightweight diagnostics polling (`/getDiagnosticsSummary`) and fetches full diagnostics on click.
 - `/controller` shows diagnostics per clock; red cells are clickable for detailed JSON.
 
 ## Project Structure

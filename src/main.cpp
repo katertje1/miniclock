@@ -22,6 +22,19 @@ const unsigned long DST_UPDATE_INTERVAL = 3600000;  // 1 hour
 int currentOffset = 0;
 unsigned long lastWiFiReconnectAttempt = 0;
 const unsigned long WIFI_RECONNECT_INTERVAL = 15000;
+uint32_t minFreeHeapSinceBoot = 0xFFFFFFFFUL;
+
+static void formatDateYmd(const tm* t, char* out, size_t outLen) {
+  if (!t || !out || outLen == 0) return;
+  snprintf(out, outLen, "%04d-%02d-%02d", t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
+}
+
+static void formatDateTime(const tm* t, char* out, size_t outLen) {
+  if (!t || !out || outLen == 0) return;
+  snprintf(out, outLen, "%04d-%02d-%02d %02d:%02d:%02d",
+           t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+           t->tm_hour, t->tm_min, t->tm_sec);
+}
 
 //#define TIMEZONE_OFFSET 2  // Central European Summer Time (CEST) is UTC+2
 
@@ -54,6 +67,7 @@ void setup() {
   colonColor = currentConfig.DEFAULT_COLON_COLOR;
 
   initClockDisplay();
+  minFreeHeapSinceBoot = ESP.getFreeHeap();
   connectToWiFi();
 
   ArduinoOTA.setHostname(currentConfig.deviceName);
@@ -77,6 +91,11 @@ void setup() {
 }
 
 void loop() {
+  const uint32_t freeHeapNow = ESP.getFreeHeap();
+  if (freeHeapNow < minFreeHeapSinceBoot) {
+    minFreeHeapSinceBoot = freeHeapNow;
+  }
+
   if (WiFi.status() != WL_CONNECTED && millis() - lastWiFiReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
     connectToWiFi();
     lastWiFiReconnectAttempt = millis();
@@ -107,7 +126,7 @@ void loop() {
   handleWebRequests();
 
   char currentDate[11];  // "YYYY-MM-DD"
-  strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", nowInfo);
+  formatDateYmd(nowInfo, currentDate, sizeof(currentDate));
 
   // Only recalculate if the sunrise/sunset hasn't already been calculated for today
   if (strcmp(currentDate, lastSunriseSunsetCalcDate) != 0) {
@@ -136,7 +155,7 @@ void loop() {
     Serial.println(WiFi.localIP());
 
     char formattedTime[20];
-    strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", nowInfo);
+    formatDateTime(nowInfo, formattedTime, sizeof(formattedTime));
 
     Serial.print("Current Time: ");
     Serial.println(formattedTime);  // Displays the current time in local format

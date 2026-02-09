@@ -71,8 +71,6 @@ void initClockDisplay() {
     strip.show(); // Initialize all pixels to 'off'
 }
 
-#include "SunriseSunset.h"  // ✅ To get getDSTOffset()
-
 int getHours() {
     time_t now = timeClient.getEpochTime();  // ✅ No additional DST offset
     struct tm* timeinfo = gmtime(&now);

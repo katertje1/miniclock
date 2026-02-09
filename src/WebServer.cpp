@@ -3,9 +3,85 @@
 #include "ClockDisplay.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <ESP8266WiFi.h>
 
 ESP8266WebServer server(80);
 static bool fsReady = false;
+static uint32_t diagnosticsRequestCount = 0;
+// Keep large scratch buffers out of the limited cont stack on ESP8266.
+static char diagResponse[2048];
+static char diagIpStr[16];
+static char diagSubnetStr[16];
+static char diagGatewayStr[16];
+static char diagDnsStr[16];
+static char diagMacStr[18];
+static char diagNowTs[24];
+static char diagResetTs[24];
+static char diagResetReason[192];
+static char diagResetInfo[448];
+static char diagSsid[80];
+static bool diagResetCached = false;
+static unsigned long diagLastBuildMs = 0;
+static const unsigned long DIAG_BUILD_INTERVAL_MS = 2000;
+static char statusResponse[896];
+static char statusTimeStr[24];
+static char statusSunriseStr[16];
+static char statusSunsetStr[16];
+static char statusHourColorStr[8];
+static char statusMinuteColorStr[8];
+static char smallJsonResponse[160];
+static char clockListResponse[768];
+static char genericTimeStr[24];
+static char diagSummaryResponse[512];
+static char diagResetInfoShort[128];
+
+static void ensureResetInfoCached() {
+  if (diagResetCached) return;
+  String rr = ESP.getResetReason();
+  String ri = ESP.getResetInfo();
+  rr.toCharArray(diagResetReason, sizeof(diagResetReason));
+  ri.toCharArray(diagResetInfo, sizeof(diagResetInfo));
+  diagResetCached = true;
+}
+
+static const char* wifiStatusToString(wl_status_t status) {
+  switch (status) {
+    case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
+    case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
+    case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
+    case WL_CONNECTED: return "WL_CONNECTED";
+    case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+    case WL_DISCONNECTED: return "WL_DISCONNECTED";
+    default: return "WL_UNKNOWN";
+  }
+}
+
+static void formatTime12h(time_t epoch, char* out, size_t outLen) {
+  if (!out || outLen == 0) return;
+  tm* info = localtime(&epoch);
+  if (!info) {
+    snprintf(out, outLen, "--:-- --");
+    return;
+  }
+  int hour24 = info->tm_hour;
+  int hour12 = hour24 % 12;
+  if (hour12 == 0) hour12 = 12;
+  const char* ampm = (hour24 < 12) ? "AM" : "PM";
+  snprintf(out, outLen, "%02d:%02d %s", hour12, info->tm_min, ampm);
+}
+
+static void formatLocalDateTime(time_t epoch, char* out, size_t outLen) {
+  if (!out || outLen == 0) return;
+  tm* info = localtime(&epoch);
+  if (!info) {
+    snprintf(out, outLen, "0000-00-00 00:00:00");
+    return;
+  }
+  snprintf(out, outLen, "%04d-%02d-%02d %02d:%02d:%02d",
+           info->tm_year + 1900, info->tm_mon + 1, info->tm_mday,
+           info->tm_hour, info->tm_min, info->tm_sec);
+}
 
 // Function to add CORS headers globally
 void addGlobalCORSHeaders() {
@@ -52,14 +128,29 @@ void handleController() {
 }
 
 void handleGetClockList() {
-  JsonDocument doc;
-  JsonArray arr = doc.to<JsonArray>();
-  for (int i = 0; i < clockConfigCount; i++) {
-    arr.add(clockConfigs[i].deviceName);
+  int n = snprintf(clockListResponse, sizeof(clockListResponse), "[");
+  if (n < 0 || n >= (int)sizeof(clockListResponse)) {
+    server.send(500, "text/plain", "Clock list too large");
+    return;
   }
-  String response;
-  serializeJson(doc, response);
-  server.send(200, "application/json", response);
+  int used = n;
+  for (int i = 0; i < clockConfigCount; i++) {
+    n = snprintf(clockListResponse + used, sizeof(clockListResponse) - used,
+                 "%s\"%s\"",
+                 (i == 0) ? "" : ",",
+                 clockConfigs[i].deviceName);
+    if (n < 0 || n >= (int)(sizeof(clockListResponse) - used)) {
+      server.send(500, "text/plain", "Clock list too large");
+      return;
+    }
+    used += n;
+  }
+  n = snprintf(clockListResponse + used, sizeof(clockListResponse) - used, "]");
+  if (n < 0 || n >= (int)(sizeof(clockListResponse) - used)) {
+    server.send(500, "text/plain", "Clock list too large");
+    return;
+  }
+  server.send(200, "application/json", clockListResponse);
 }
 
 void handleRoot() {
@@ -576,6 +667,7 @@ void initWebServer() {
   server.on("/getStatus", []() { addGlobalCORSHeaders(); handleGetStatus(); });
   server.on("/getCurrentMode", []() { addGlobalCORSHeaders(); handleGetCurrentMode(); });
   server.on("/getDiagnostics", []() { addGlobalCORSHeaders(); handleGetDiagnostics(); });
+  server.on("/getDiagnosticsSummary", []() { addGlobalCORSHeaders(); handleGetDiagnosticsSummary(); });
   server.on("/getSunrise", []() { addGlobalCORSHeaders(); handleGetSunrise(); });
   server.on("/getSunset", []() { addGlobalCORSHeaders(); handleGetSunset(); });
 
@@ -624,92 +716,202 @@ void handleGetSoftwareVersion() {
   server.send(200, "text/plain", softwareVersion);
 }
 void handleGetStatus() {
-  JsonDocument doc;
-  doc["deviceName"] = currentConfig.deviceName;
-  doc["softwareVersion"] = softwareVersion;
-  doc["currentTime"] = "";
-  doc["sunriseTime"] = "";
-  doc["sunsetTime"] = "";
-  doc["currentMode"] = getClockModeString(currentMode);
-  doc["currentBrightness"] = currentBrightness;
-
   time_t currentEpochTime = timeClient.getEpochTime();
-  tm* currentInfo = localtime(&currentEpochTime);
-  char timeStr[64];
-  snprintf(timeStr, sizeof(timeStr), "%02d-%02d-%04d %02d:%02d:%02d",
-          currentInfo->tm_mday, currentInfo->tm_mon + 1, currentInfo->tm_year + 1900,
-          currentInfo->tm_hour, currentInfo->tm_min, currentInfo->tm_sec);
-  doc["currentTime"] = timeStr;
+  formatLocalDateTime(currentEpochTime, statusTimeStr, sizeof(statusTimeStr));
 
   SunriseSunsetTimes times = getSunriseSunsetTimes();
-  char sunriseStr[20];
-  char sunsetStr[20];
-  tm* sunriseInfo = localtime(&times.sunrise);
-  strftime(sunriseStr, sizeof(sunriseStr), "%I:%M %p", sunriseInfo);
-  tm* sunsetInfo = localtime(&times.sunset);
-  strftime(sunsetStr, sizeof(sunsetStr), "%I:%M %p", sunsetInfo);
-  doc["sunriseTime"] = sunriseStr;
-  doc["sunsetTime"] = sunsetStr;
+  formatTime12h(times.sunrise, statusSunriseStr, sizeof(statusSunriseStr));
+  formatTime12h(times.sunset, statusSunsetStr, sizeof(statusSunsetStr));
+  snprintf(statusHourColorStr, sizeof(statusHourColorStr), "#%06X", hourColor & 0xFFFFFF);
+  snprintf(statusMinuteColorStr, sizeof(statusMinuteColorStr), "#%06X", minuteColor & 0xFFFFFF);
 
-  char colorStr[8];
-  snprintf(colorStr, sizeof(colorStr), "#%06X", hourColor & 0xFFFFFF);
-  doc["hourColor"] = colorStr;
-  snprintf(colorStr, sizeof(colorStr), "#%06X", minuteColor & 0xFFFFFF);
-  doc["minuteColor"] = colorStr;
+  int n = snprintf(
+      statusResponse, sizeof(statusResponse),
+      "{\"deviceName\":\"%s\",\"softwareVersion\":\"%s\",\"currentTime\":\"%s\","
+      "\"sunriseTime\":\"%s\",\"sunsetTime\":\"%s\",\"currentMode\":\"%s\","
+      "\"currentBrightness\":%u,\"hourColor\":\"%s\",\"minuteColor\":\"%s\"}",
+      currentConfig.deviceName,
+      softwareVersion,
+      statusTimeStr,
+      statusSunriseStr,
+      statusSunsetStr,
+      getClockModeString(currentMode),
+      (unsigned)currentBrightness,
+      statusHourColorStr,
+      statusMinuteColorStr);
 
-  String response;
-  serializeJson(doc, response);
-  server.send(200, "application/json", response);
+  if (n < 0 || n >= (int)sizeof(statusResponse)) {
+    server.send(500, "text/plain", "Status JSON too large");
+    return;
+  }
+  server.send(200, "application/json", statusResponse);
 }
 void handleGetCurrentMode() {
   server.send(200, "text/plain", getClockModeString(currentMode));
 }
+
+void handleGetDiagnosticsSummary() {
+  diagnosticsRequestCount++;
+  ensureResetInfoCached();
+
+  unsigned long uptimeSeconds = millis() / 1000;
+  wl_status_t wifiStatus = WiFi.status();
+  uint32_t freeHeap = ESP.getFreeHeap();
+  uint16_t freeContStack = ESP.getFreeContStack();
+
+  strncpy(diagResetInfoShort, diagResetInfo, sizeof(diagResetInfoShort) - 1);
+  diagResetInfoShort[sizeof(diagResetInfoShort) - 1] = '\0';
+
+  // Keep summary intentionally small for periodic polling.
+  int n = snprintf(
+      diagSummaryResponse, sizeof(diagSummaryResponse),
+      "{\"softwareVersion\":\"%s\",\"deviceName\":\"%s\",\"uptimeSeconds\":%lu,"
+      "\"freeHeap\":%lu,\"freeContStack\":%u,\"diagnosticsRequestCount\":%lu,"
+      "\"wifiStatusCode\":%d,\"wifiStatus\":\"%s\",\"resetReason\":\"%s\",\"resetInfo\":\"%s\"}",
+      softwareVersion,
+      currentConfig.deviceName,
+      uptimeSeconds,
+      (unsigned long)freeHeap,
+      (unsigned)freeContStack,
+      (unsigned long)diagnosticsRequestCount,
+      (int)wifiStatus,
+      wifiStatusToString(wifiStatus),
+      diagResetReason,
+      diagResetInfoShort);
+
+  if (n < 0 || n >= (int)sizeof(diagSummaryResponse)) {
+    server.send(500, "text/plain", "Diagnostics summary JSON too large");
+    return;
+  }
+  server.send(200, "application/json", diagSummaryResponse);
+}
+
 void handleGetDiagnostics() {
-  JsonDocument doc;
+  diagnosticsRequestCount++;
+  ensureResetInfoCached();
+
+  // Rebuild expensive diagnostics payload at most once per short interval.
+  // Repeated browser polling then mostly serves cached JSON.
+  unsigned long nowMs = millis();
+  if ((nowMs - diagLastBuildMs) < DIAG_BUILD_INTERVAL_MS && diagResponse[0] != '\0') {
+    server.send(200, "application/json", diagResponse);
+    return;
+  }
+
   unsigned long uptimeSeconds = millis() / 1000;
   time_t nowEpoch = timeClient.getEpochTime();
   bool timeSynced = (nowEpoch > 1700000000);  // Basic guard against unsynced NTP time.
+  wl_status_t wifiStatus = WiFi.status();
+  uint32_t freeHeap = ESP.getFreeHeap();
+  uint8_t heapFrag = ESP.getHeapFragmentation();
+  uint32_t maxFreeBlock = ESP.getMaxFreeBlockSize();
+  uint16_t freeContStack = ESP.getFreeContStack();
+  String ssidStr = WiFi.SSID();
+  ssidStr.toCharArray(diagSsid, sizeof(diagSsid));
 
-  doc["uptimeSeconds"] = uptimeSeconds;
-  doc["freeHeap"] = ESP.getFreeHeap();
-  doc["softwareVersion"] = softwareVersion;
-  doc["resetReason"] = ESP.getResetReason();
-  doc["resetInfo"] = ESP.getResetInfo();
-  doc["timeSynced"] = timeSynced;
+  IPAddress ip = WiFi.localIP();
+  IPAddress subnet = WiFi.subnetMask();
+  IPAddress gateway = WiFi.gatewayIP();
+  IPAddress dns = WiFi.dnsIP();
+
+  snprintf(diagIpStr, sizeof(diagIpStr), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+  snprintf(diagSubnetStr, sizeof(diagSubnetStr), "%u.%u.%u.%u", subnet[0], subnet[1], subnet[2], subnet[3]);
+  snprintf(diagGatewayStr, sizeof(diagGatewayStr), "%u.%u.%u.%u", gateway[0], gateway[1], gateway[2], gateway[3]);
+  snprintf(diagDnsStr, sizeof(diagDnsStr), "%u.%u.%u.%u", dns[0], dns[1], dns[2], dns[3]);
+
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  snprintf(diagMacStr, sizeof(diagMacStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  long rssi = WiFi.RSSI();
+
+  int n = 0;
 
   if (timeSynced) {
-    doc["currentEpoch"] = nowEpoch;
+    formatLocalDateTime(nowEpoch, diagNowTs, sizeof(diagNowTs));
+
     if (nowEpoch > (time_t)uptimeSeconds) {
       time_t estimatedResetEpoch = nowEpoch - (time_t)uptimeSeconds;
-      doc["estimatedResetEpoch"] = estimatedResetEpoch;
+      formatLocalDateTime(estimatedResetEpoch, diagResetTs, sizeof(diagResetTs));
 
-      char ts[24];
-      tm* resetInfoTm = localtime(&estimatedResetEpoch);
-      if (resetInfoTm != nullptr) {
-        strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", resetInfoTm);
-        doc["estimatedResetLocalTime"] = ts;
-      }
+      n = snprintf(
+          diagResponse, sizeof(diagResponse),
+          "{\"uptimeSeconds\":%lu,\"freeHeap\":%lu,\"minFreeHeapSinceBoot\":%lu,"
+          "\"heapFragmentation\":%u,\"maxFreeBlockSize\":%lu,\"freeContStack\":%u,"
+          "\"softwareVersion\":\"%s\",\"deviceName\":\"%s\",\"selectedClock\":%d,"
+          "\"currentMode\":\"%s\",\"currentModeId\":%d,\"diagnosticsRequestCount\":%lu,"
+          "\"wifiStatusCode\":%d,\"wifiStatus\":\"%s\",\"wifiConnected\":%s,"
+          "\"ip\":\"%s\",\"subnetMask\":\"%s\",\"gateway\":\"%s\",\"dns\":\"%s\","
+          "\"mac\":\"%s\",\"ssid\":\"%s\",\"rssi\":%ld,\"resetReason\":\"%s\","
+          "\"resetInfo\":\"%s\",\"timeSynced\":true,\"currentEpoch\":%ld,"
+          "\"currentLocalTime\":\"%s\",\"estimatedResetEpoch\":%ld,"
+          "\"estimatedResetLocalTime\":\"%s\"}",
+          uptimeSeconds, (unsigned long)freeHeap, (unsigned long)minFreeHeapSinceBoot,
+          (unsigned)heapFrag, (unsigned long)maxFreeBlock, (unsigned)freeContStack,
+          softwareVersion, currentConfig.deviceName, selectedClock,
+          getClockModeString(currentMode), (int)currentMode, (unsigned long)diagnosticsRequestCount,
+          (int)wifiStatus, wifiStatusToString(wifiStatus), (wifiStatus == WL_CONNECTED) ? "true" : "false",
+          diagIpStr, diagSubnetStr, diagGatewayStr, diagDnsStr,
+          diagMacStr, diagSsid, rssi, diagResetReason, diagResetInfo,
+          (long)nowEpoch, diagNowTs, (long)estimatedResetEpoch, diagResetTs);
+    } else {
+      n = snprintf(
+          diagResponse, sizeof(diagResponse),
+          "{\"uptimeSeconds\":%lu,\"freeHeap\":%lu,\"minFreeHeapSinceBoot\":%lu,"
+          "\"heapFragmentation\":%u,\"maxFreeBlockSize\":%lu,\"freeContStack\":%u,"
+          "\"softwareVersion\":\"%s\",\"deviceName\":\"%s\",\"selectedClock\":%d,"
+          "\"currentMode\":\"%s\",\"currentModeId\":%d,\"diagnosticsRequestCount\":%lu,"
+          "\"wifiStatusCode\":%d,\"wifiStatus\":\"%s\",\"wifiConnected\":%s,"
+          "\"ip\":\"%s\",\"subnetMask\":\"%s\",\"gateway\":\"%s\",\"dns\":\"%s\","
+          "\"mac\":\"%s\",\"ssid\":\"%s\",\"rssi\":%ld,\"resetReason\":\"%s\","
+          "\"resetInfo\":\"%s\",\"timeSynced\":true,\"currentEpoch\":%ld,"
+          "\"currentLocalTime\":\"%s\"}",
+          uptimeSeconds, (unsigned long)freeHeap, (unsigned long)minFreeHeapSinceBoot,
+          (unsigned)heapFrag, (unsigned long)maxFreeBlock, (unsigned)freeContStack,
+          softwareVersion, currentConfig.deviceName, selectedClock,
+          getClockModeString(currentMode), (int)currentMode, (unsigned long)diagnosticsRequestCount,
+          (int)wifiStatus, wifiStatusToString(wifiStatus), (wifiStatus == WL_CONNECTED) ? "true" : "false",
+          diagIpStr, diagSubnetStr, diagGatewayStr, diagDnsStr,
+          diagMacStr, diagSsid, rssi, diagResetReason, diagResetInfo,
+          (long)nowEpoch, diagNowTs);
     }
+  } else {
+    n = snprintf(
+        diagResponse, sizeof(diagResponse),
+        "{\"uptimeSeconds\":%lu,\"freeHeap\":%lu,\"minFreeHeapSinceBoot\":%lu,"
+        "\"heapFragmentation\":%u,\"maxFreeBlockSize\":%lu,\"freeContStack\":%u,"
+        "\"softwareVersion\":\"%s\",\"deviceName\":\"%s\",\"selectedClock\":%d,"
+        "\"currentMode\":\"%s\",\"currentModeId\":%d,\"diagnosticsRequestCount\":%lu,"
+        "\"wifiStatusCode\":%d,\"wifiStatus\":\"%s\",\"wifiConnected\":%s,"
+        "\"ip\":\"%s\",\"subnetMask\":\"%s\",\"gateway\":\"%s\",\"dns\":\"%s\","
+        "\"mac\":\"%s\",\"ssid\":\"%s\",\"rssi\":%ld,\"resetReason\":\"%s\","
+        "\"resetInfo\":\"%s\",\"timeSynced\":false}",
+        uptimeSeconds, (unsigned long)freeHeap, (unsigned long)minFreeHeapSinceBoot,
+        (unsigned)heapFrag, (unsigned long)maxFreeBlock, (unsigned)freeContStack,
+        softwareVersion, currentConfig.deviceName, selectedClock,
+        getClockModeString(currentMode), (int)currentMode, (unsigned long)diagnosticsRequestCount,
+        (int)wifiStatus, wifiStatusToString(wifiStatus), (wifiStatus == WL_CONNECTED) ? "true" : "false",
+        diagIpStr, diagSubnetStr, diagGatewayStr, diagDnsStr,
+        diagMacStr, diagSsid, rssi, diagResetReason, diagResetInfo);
   }
 
-  String response;
-  serializeJson(doc, response);
-  server.send(200, "application/json", response);
+  if (n < 0 || n >= (int)sizeof(diagResponse)) {
+    server.send(500, "text/plain", "Diagnostics JSON too large");
+    return;
+  }
+  diagLastBuildMs = nowMs;
+  server.send(200, "application/json", diagResponse);
 }
 void handleGetSunrise(){
     SunriseSunsetTimes times = getSunriseSunsetTimes();
-    time_t sunriseTime = times.sunrise;
-    tm* timeInfo = localtime(&sunriseTime);
-    char sunriseStr[20];
-    strftime(sunriseStr, sizeof(sunriseStr), "%I:%M %p", timeInfo);  // Use "%H:%M:%S" for 24-hour format
+    char sunriseStr[16];
+    formatTime12h(times.sunrise, sunriseStr, sizeof(sunriseStr));
     server.send(200, "text/plain", sunriseStr);
 }
 void handleGetSunset(){
     SunriseSunsetTimes times = getSunriseSunsetTimes();
-    time_t sunsetTime = times.sunset;
-    tm* timeInfo = localtime(&sunsetTime);
-    char sunsetStr[20];
-    strftime(sunsetStr, sizeof(sunsetStr), "%I:%M %p", timeInfo);  // Use "%H:%M:%S" for 24-hour format
+    char sunsetStr[16];
+    formatTime12h(times.sunset, sunsetStr, sizeof(sunsetStr));
     server.send(200, "text/plain", sunsetStr);
 }
 
@@ -767,15 +969,18 @@ void addStopwatchMinute() {
 }
 
 void getStopwatchStatus() {
-  JsonDocument doc;
   unsigned long remainingMs = stopwatchGetRemainingMs();
-  doc["running"] = stopwatchIsRunning();
-  doc["remainingMs"] = remainingMs;
-  doc["remainingSeconds"] = (remainingMs + 999UL) / 1000UL;
-
-  String response;
-  serializeJson(doc, response);
-  server.send(200, "application/json", response);
+  int n = snprintf(
+      smallJsonResponse, sizeof(smallJsonResponse),
+      "{\"running\":%s,\"remainingMs\":%lu,\"remainingSeconds\":%lu}",
+      stopwatchIsRunning() ? "true" : "false",
+      remainingMs,
+      (remainingMs + 999UL) / 1000UL);
+  if (n < 0 || n >= (int)sizeof(smallJsonResponse)) {
+    server.send(500, "text/plain", "Stopwatch JSON too large");
+    return;
+  }
+  server.send(200, "application/json", smallJsonResponse);
 }
 
 void resetColors() {
@@ -784,26 +989,28 @@ void resetColors() {
   colonColor = currentConfig.DEFAULT_COLON_COLOR;
 
   char hourColorStr[8], minuteColorStr[8], colonColorStr[8];
-  sprintf(hourColorStr, "#%06X", currentConfig.DEFAULT_HOUR_COLOR & 0xFFFFFF);
-  sprintf(minuteColorStr, "#%06X", currentConfig.DEFAULT_MINUTE_COLOR & 0xFFFFFF);
-  sprintf(colonColorStr, "#%06X", currentConfig.DEFAULT_COLON_COLOR & 0xFFFFFF);
+  snprintf(hourColorStr, sizeof(hourColorStr), "#%06X", currentConfig.DEFAULT_HOUR_COLOR & 0xFFFFFF);
+  snprintf(minuteColorStr, sizeof(minuteColorStr), "#%06X", currentConfig.DEFAULT_MINUTE_COLOR & 0xFFFFFF);
+  snprintf(colonColorStr, sizeof(colonColorStr), "#%06X", currentConfig.DEFAULT_COLON_COLOR & 0xFFFFFF);
 
-  String jsonResponse = "{";
-  jsonResponse += "\"defaultHourColor\": \"" + String(hourColorStr) + "\",";
-  jsonResponse += "\"defaultMinuteColor\": \"" + String(minuteColorStr) + "\",";
-  jsonResponse += "\"defaultColonColor\": \"" + String(colonColorStr) + "\"";
-  jsonResponse += "}";
-
-  server.send(200, "application/json", jsonResponse);
+  int n = snprintf(
+      smallJsonResponse, sizeof(smallJsonResponse),
+      "{\"defaultHourColor\":\"%s\",\"defaultMinuteColor\":\"%s\",\"defaultColonColor\":\"%s\"}",
+      hourColorStr, minuteColorStr, colonColorStr);
+  if (n < 0 || n >= (int)sizeof(smallJsonResponse)) {
+    server.send(500, "text/plain", "Color JSON too large");
+    return;
+  }
+  server.send(200, "application/json", smallJsonResponse);
 }
 
 void getBrightness() {
-  JsonDocument jsonDoc;
-  jsonDoc["brightness"] = currentBrightness;
-
-  String response;
-  serializeJson(jsonDoc, response);
-  server.send(200, "application/json", response);
+  int n = snprintf(smallJsonResponse, sizeof(smallJsonResponse), "{\"brightness\":%u}", (unsigned)currentBrightness);
+  if (n < 0 || n >= (int)sizeof(smallJsonResponse)) {
+    server.send(500, "text/plain", "Brightness JSON too large");
+    return;
+  }
+  server.send(200, "application/json", smallJsonResponse);
 }
 
 void setBrightnessOffsets() {
@@ -825,20 +1032,20 @@ void setBrightnessOffsets() {
 
 void handleGetHourColor() {
   char colorStr[8];
-  sprintf(colorStr, "#%06X", hourColor & 0xFFFFFF);
-  server.send(200, "text/plain", String(colorStr));
+  snprintf(colorStr, sizeof(colorStr), "#%06X", hourColor & 0xFFFFFF);
+  server.send(200, "text/plain", colorStr);
 }
 
 void handleGetMinuteColor() {
   char colorStr[8];
-  sprintf(colorStr, "#%06X", minuteColor & 0xFFFFFF);
-  server.send(200, "text/plain", String(colorStr));
+  snprintf(colorStr, sizeof(colorStr), "#%06X", minuteColor & 0xFFFFFF);
+  server.send(200, "text/plain", colorStr);
 }
 
 void handleGetColonColor() {
   char colorStr[8];
-  sprintf(colorStr, "#%06X", colonColor & 0xFFFFFF);
-  server.send(200, "text/plain", String(colorStr));
+  snprintf(colorStr, sizeof(colorStr), "#%06X", colonColor & 0xFFFFFF);
+  server.send(200, "text/plain", colorStr);
 }
 
 void handleSetHourColor() {
@@ -873,19 +1080,18 @@ void handleSetColonColor() {
 
 void getCurrentDateTime() {
   time_t currentEpochTime = timeClient.getEpochTime();
-  tm* timeInfo = localtime(&currentEpochTime);
-  char timeStr[64];
-  snprintf(timeStr, sizeof(timeStr), "%02d-%02d-%04d %02d:%02d:%02d",
-          timeInfo->tm_mday,
-          timeInfo->tm_mon + 1,
-          timeInfo->tm_year + 1900,
-          timeInfo->tm_hour,
-          timeInfo->tm_min,
-          timeInfo->tm_sec);
-  server.send(200, "text/plain", String(timeStr));
+  formatLocalDateTime(currentEpochTime, genericTimeStr, sizeof(genericTimeStr));
+  server.send(200, "text/plain", genericTimeStr);
 }
 
 void getBrightnessOffsets() {
-  String jsonResponse = "{\"dayOffset\": " + String(dayTimeBrightnessOffset) + ", \"nightOffset\": " + String(nightTimeBrightnessOffset) + "}";
-  server.send(200, "application/json", jsonResponse);
+  int n = snprintf(
+      smallJsonResponse, sizeof(smallJsonResponse),
+      "{\"dayOffset\":%d,\"nightOffset\":%d}",
+      dayTimeBrightnessOffset, nightTimeBrightnessOffset);
+  if (n < 0 || n >= (int)sizeof(smallJsonResponse)) {
+    server.send(500, "text/plain", "Brightness offset JSON too large");
+    return;
+  }
+  server.send(200, "application/json", smallJsonResponse);
 }
